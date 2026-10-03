@@ -1,74 +1,113 @@
 # Runlink architecture
 
-Design target, not implemented. [VISION](../VISION.md) and [RATIONALE](../RATIONALE.md) define the product.
+Design target, not implemented. [VISION](../VISION.md) and [RATIONALE](../RATIONALE.md) define the product: `optional input -> task function -> output`, with execution on the owner's machine.
 
-| View | Answers |
+## Documentation structure
+
+| Document | Purpose |
 | --- | --- |
-| This page | What runs where, which stack, and who owns state? |
-| [Runtime](runtime.md) | How are tasks published, connected, and executed? |
-| [Security](security.md) | What is trusted, verified, and isolated? |
-| [Implementation](implementation.md) | What gets built first, and what remains unresolved? |
+| This overview | Components, state ownership, and the main runtime flow |
+| [Architecture decision records](#architecture-decision-records) | Accepted decisions, their context, and consequences |
+| [Implementation plan](implementation.md) | Build order, required proofs, and unresolved implementation choices |
+
+Decisions live in `adr/NNNN-short-title.md`, using Status, Context, Decision, and Consequences, following the [lightweight ADR format](https://cognitect.com/blog/2011/11/15/documenting-architecture-decisions). Accepted means agreed design, not completed implementation. New decisions use the next number; changed decisions get a new ADR that links to and supersedes the old one. Keep implementation progress in the plan.
+
+## Architecture decision records
+
+| ADR | Decision | Status |
+| --- | --- | --- |
+| [0001](adr/0001-owner-local-tasks.md) | Owner-local tasks and a single owner binary | Accepted |
+| [0002](adr/0002-webrtc-transport.md) | WebRTC data channels with signaling and TURN fallback | Accepted |
+| [0003](adr/0003-trusted-browser-client.md) | Trusted browser code and client-held recipient secrets | Accepted |
+| [0004](adr/0004-bounded-task-registry.md) | Durable, bounded UUID registration | Accepted |
+| [0005](adr/0005-run-recovery-and-supervision.md) | Durable run recovery and crash-surviving supervision | Accepted |
+| [0006](adr/0006-hetzner-deployment.md) | Separate frontend, application, and TURN servers on Hetzner | Accepted |
 
 ## Container view
 
-[C4 container](https://c4model.com/diagrams/container) responsibilities in Mermaid; arrows show communication, not deployment permissions.
+Arrows show communication, not deployment permissions.
 
 ```mermaid
 flowchart TB
-    recipient["Recipient<br/>Person"]
-    owner["Owner<br/>Person"]
+    recipient["Recipient"]
+    owner["Owner"]
     browser["Browser client<br/>HTML, CSS, JavaScript<br/>Inputs, progress, results"]
-    frontend["Static frontend<br/>Loader and approved release hashes"]
+    frontend["Static frontend and ingress<br/>Loader and approved release hashes"]
     app["Application server<br/>Go<br/>Registration and signaling"]
     runner["Owner CLI / runner<br/>Go<br/>Authorization and execution"]
-    network["coturn STUN / TURN<br/>Self-hosted on Hetzner<br/>Discovery and encrypted relay"]
+    network["coturn STUN / TURN<br/>Discovery and encrypted relay"]
     script["Existing task script<br/>Any language; owner machine"]
 
     recipient -->|Opens shared link| browser
     owner -->|Publishes and controls tasks| runner
     browser -->|HTTPS: initial loader| frontend
-    browser <-->|WSS: signaling| app
-    runner <-->|Outbound WSS: registration and signaling| app
+    browser <-->|WSS via ingress: signaling| app
+    runner <-->|Outbound WSS via ingress| app
     browser <-->|Authenticated WebRTC: GUI and task data| runner
     browser <-.->|STUN discovery / TURN fallback| network
     runner <-.->|STUN discovery / TURN fallback| network
-    runner -->|Fixed command and validated input| script
+    runner -->|Supervised fixed command and validated input| script
     script -->|Selected output| runner
 ```
 
 The owner serves the full GUI and executes tasks. The static loader connects the browser and verifies the GUI. WebRTC payload encryption terminates in browser and runner; HTTPS/WSS carries coordination. Direct connections avoid server payload bandwidth; TURN fallback incurs it.
 
-## Stack
-
-| Area | Choice | Reason |
-| --- | --- | --- |
-| CLI and application server | Go 1.27.1; one module, two executables; standard library first | Network I/O, process supervision, binary distribution |
-| Browser | HTML, CSS, vanilla JavaScript; CLI embeds GUI with `go:embed` | Fixed task interaction; no frontend framework/runtime |
-| Peer transport | Browser WebRTC and Pion WebRTC v4 in Go | Native encrypted data channels, NAT traversal, direct transfer |
-| Signaling | HTTPS/WSS; `net/http` and `coder/websocket` | Small control messages; owner requires no inbound port forwarding |
-| Process execution | `os/exec`, explicit arguments, process-group supervision | Reuse existing scripts and their installed environment |
-| Initial storage | Local files; single application-server instance | Small registry and owner-local state; no external database or queue initially |
-| Hosting | Self-hosted Linux VMs on Hetzner Cloud | Small first deployment; increase capacity when measured load requires it |
-| STUN / TURN | Self-hosted [coturn](https://github.com/coturn/coturn) on Hetzner | Own discovery and relay infrastructure; standard WebRTC compatibility |
-
-Pin dependencies at bootstrap.
-
-First-release owner platforms are macOS and Linux. Windows is deferred to reach a working product sooner.
-
-The owner CLI command is `runlink`. Users may configure `rl` as a shell alias; documentation and scripts use `runlink`.
-
-Hetzner Cloud is the confirmed hosting provider for v1. We self-host the frontend, application server, and coturn in one location; [Security](security.md#first-version-hosting) defines placement and networking. Start with small VMs and scale within Hetzner as measured load requires.
-
 ## State ownership
 
 | Location | State |
 | --- | --- |
-| Owner machine | Owner credential, task definitions, generated link secrets, access policy, run records, bounded result files |
-| Application server | Durable UUID-to-owner registry with atomic reservation; active signaling connections in memory |
+| Owner machine | Owner credential, task definitions, generated link secrets, access policy, durable run and supervision records, bounded results |
+| Application server | Bounded durable UUID-to-owner registry; active signaling connections in memory |
 | Static frontend | Immutable loader releases and approved GUI hashes; no task data or secrets |
-| Browser | Current session secret and task data in memory; no secret in telemetry or persistent web storage |
+| Browser | Session secret and task data in memory; nonsecret task/run recovery handles in persistent browser storage |
 | TURN | Bounded relay allocations and transport metadata; no task plaintext |
 
-One public domain: `runlink.dev`. Loader and application server run on separate servers; [Security](security.md) defines routing and permissions.
+Browser persistence grants no access. Recovery always requires fresh authentication after a reload. URL cleanup reduces fragment exposure but cannot erase copies already recorded by browser history or synchronization; [ADR 0003](adr/0003-trusted-browser-client.md#recipient-secrets) defines that limitation.
 
-Browser-only recipients; one owner binary; no SDK or per-language discovery. Cloud execution, bespoke task interfaces, and multi-step recipient workflows are out of scope.
+## Publish, connect, run
+
+```mermaid
+sequenceDiagram
+    actor O as Owner
+    participant R as Local runner
+    participant A as Application server
+    actor U as Recipient
+    participant B as Browser
+    participant F as Static frontend
+
+    O->>R: Publish fixed task and exposure policy
+    R->>A: Authenticate owner and register within quota
+    A-->>R: Durably reserved UUID
+    R->>R: Generate and retain random secret locally
+    R-->>O: URL with fragment, or URL plus separate secret
+    O-->>U: Share selected format outside Runlink
+    U->>B: Open shared URL
+    B->>F: GET /UUID (fragment excluded)
+    F-->>B: Static loader and approved GUI hashes
+    B->>B: Capture fragment in memory and immediately remove it
+    opt No secret in memory
+        U->>B: Enter separately received secret or reopen original link
+    end
+    B->>A: Request connection for UUID
+    A->>R: Forward offer and ICE candidates
+    R-->>A: Answer and ICE candidates
+    A-->>B: Forward response; close signaling when exchange ends
+    Note over B,R: ICE selects direct path or TURN fallback
+    B->>R: Mutually authenticate, bound to task and peers
+    R-->>B: Official GUI bundle and task definition
+    B->>B: Verify release hash before executing GUI
+    alt Saved recovery handle exists
+        B->>R: Query saved run ID; do not submit a new run
+        R-->>B: Existing state or explicit unknown/expired outcome
+    else Recipient explicitly starts a run
+        B->>B: Persist nonsecret task/run handle before sending
+        B->>R: Run ID and complete input
+        R->>R: Authorize, validate, persist acceptance, deduplicate
+        R-->>B: Accepted acknowledgment
+        R->>R: Start under independent supervision and limits
+    end
+    R-->>B: Exposed progress, resource usage, and result when available
+    B-->>R: Result receipt acknowledgment
+```
+
+GUI and task data flow only after authentication. Scripts need no cryptographic integration. [ADR 0005](adr/0005-run-recovery-and-supervision.md) defines recovery when delivery or execution is uncertain.
