@@ -1,6 +1,6 @@
 # Runlink architecture
 
-Design target, not implemented. [VISION](../VISION.md) and [RATIONALE](../RATIONALE.md) define the product: `optional input -> task function -> output`, with execution on the owner's machine.
+Product design target. The [development and shipping foundation](../README.md) is implemented; task protocols remain unimplemented. [VISION](../VISION.md) and [RATIONALE](../RATIONALE.md) define the product: `optional input -> task function -> output`, with execution on the owner's machine.
 
 ## Documentation structure
 
@@ -22,6 +22,7 @@ Decisions live in `adr/NNNN-short-title.md`, using Status, Context, Decision, an
 | [0004](adr/0004-bounded-task-registry.md) | Durable, bounded UUID registration | Accepted |
 | [0005](adr/0005-run-recovery-and-supervision.md) | Durable run recovery and crash-surviving supervision | Accepted |
 | [0006](adr/0006-hetzner-deployment.md) | Separate frontend, application, and TURN servers on Hetzner | Accepted |
+| [0007](adr/0007-local-shipping-foundation.md) | Locally verified tooling, trusted ingress, and signed deployment foundation | Accepted |
 
 ## Container view
 

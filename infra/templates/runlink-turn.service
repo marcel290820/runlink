@@ -1,0 +1,38 @@
+[Unit]
+Description=Runlink bounded TURN relay
+After=network-online.target nftables.service
+Wants=network-online.target
+ConditionPathExists=/etc/runlink/turn-secret
+ConditionPathExists=/etc/runlink/tls/fullchain.pem
+ConditionPathExists=/etc/runlink/tls/privkey.pem
+
+[Service]
+User=runlink
+Group=runlink
+RuntimeDirectory=runlink-turn
+RuntimeDirectoryMode=0700
+StateDirectory=runlink-turn
+StateDirectoryMode=0700
+ExecStartPre=/usr/bin/python3 /usr/local/lib/runlink/configure-turn.py
+ExecStart=/usr/bin/turnserver -c /run/runlink-turn/turnserver.conf
+WorkingDirectory=/var/lib/runlink-turn
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+MemoryMax=256M
+TasksMax=128
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

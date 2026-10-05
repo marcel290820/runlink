@@ -1,0 +1,38 @@
+[Unit]
+Description=Runlink ${role == "a" ? "trusted frontend" : "application scaffold"}
+Wants=network-online.target
+After=network-online.target nftables.service
+ConditionPathExists=/opt/runlink/current/bin/runlink-server
+%{ if role == "a" ~}
+ConditionPathExists=/etc/runlink/tls/fullchain.pem
+ConditionPathExists=/etc/runlink/tls/privkey.pem
+%{ endif ~}
+
+[Service]
+User=runlink
+Group=runlink
+ExecStart=/opt/runlink/current/bin/runlink-server --config /etc/runlink/server.json
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+UMask=0077
+StateDirectory=runlink
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+AmbientCapabilities=${role == "a" ? "CAP_NET_BIND_SERVICE" : ""}
+CapabilityBoundingSet=${role == "a" ? "CAP_NET_BIND_SERVICE" : ""}
+LockPersonality=true
+MemoryMax=256M
+TasksMax=128
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

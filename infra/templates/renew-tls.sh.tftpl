@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+set -euo pipefail
+install -d -m 750 -o root -g runlink /etc/runlink/tls
+install -m 640 -o root -g runlink /etc/letsencrypt/live/${tls_domain}/fullchain.pem /etc/runlink/tls/fullchain.pem
+install -m 640 -o root -g runlink /etc/letsencrypt/live/${tls_domain}/privkey.pem /etc/runlink/tls/privkey.pem
+systemctl restart ${tls_unit}

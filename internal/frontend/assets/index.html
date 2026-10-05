@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>(() => {
+  let secret = location.hash.slice(1);
+  history.replaceState(null, '', location.pathname + location.search);
+  // Authentication will consume this once; neither secrets nor task data are persisted.
+  window.runlinkSession = Object.freeze({
+    capture(value) { secret = value; },
+    consume() { const value = secret; secret = ''; return value; },
+    present() { return secret.length > 0; }
+  });
+})();</script>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Runlink</title>
+<link rel="stylesheet" href="/assets/style.css" integrity="sha256-bVA+WL224UkjwmbIRvcEGtUxkfqGwRlaJgWzoURNsWc=">
+<script type="module" src="/assets/loader.mjs" integrity="sha256-yW/Qb2wDgtJyGuYsHMg02U9bAMhXrQTY23FIhoI6Y/g="></script>
+</head>
+<body>
+<main>
+<h1>Runlink</h1>
+<p>Run a shared task on its owner's machine.</p>
+<p id="status" role="status">Preparing your link…</p>
+<form id="secret-form">
+<label for="secret">Link secret</label>
+<input id="secret" type="password" autocomplete="off" maxlength="256" required>
+<button type="submit">Continue</button>
+</form>
+<p class="note">A secret-bearing link may remain in browser history or synchronization.
+Receive the secret separately to keep it out of the URL. Reloading requires the original link or secret.</p>
+<section id="task" aria-live="polite"></section>
+</main>
+</body>
+</html>
