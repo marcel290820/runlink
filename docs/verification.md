@@ -62,7 +62,7 @@ supervision are intentionally absent; their acceptance criteria remain in the
 
 ## Changed source files
 
-3 existing documents updated and 56 new source/configuration files added.
+3 existing documents updated and 57 new source/configuration files added.
 Generated tools, caches, binaries, fixtures and archives are ignored.
 
 ### Repository and documentation

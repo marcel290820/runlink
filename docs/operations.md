@@ -12,8 +12,8 @@ scripts/release.sh sign dist/v0.1.0 --private-key /path/to/release-signing.key
 scripts/release.sh verify dist/v0.1.0 --public-key /path/to/trusted-release.pub
 ```
 
-Packaging builds both executables for Linux/macOS amd64/arm64 and includes the
-reviewable browser assets and release metadata. Archives normalize timestamps,
+Packaging builds both executables for Linux/macOS amd64/arm64 with release metadata
+that records the embedded browser asset manifest. Archives normalize timestamps,
 owners, ordering, and modes. Metadata records the source revision and dirty state;
 a clean reviewed source tree is required by the operator for a public release.
 No script commits or pushes it.
