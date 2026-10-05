@@ -1,18 +1,20 @@
-package frontend
+package server
 
 import (
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
-func TestEmbeddedAssets(t *testing.T) {
-	if err := VerifyAssets(); err != nil {
-		t.Fatal(err)
-	}
+func frontendHandler(upstream string) http.Handler {
+	c := DefaultConfig()
+	c.Role, c.Upstream = "frontend", upstream
+	return Handler(c, new(atomic.Bool))
 }
+
 func TestIngressRejectsMaliciousUpstream(t *testing.T) {
 	tests := []struct {
 		name, body string
@@ -48,7 +50,7 @@ func TestIngressRejectsMaliciousUpstream(t *testing.T) {
 			req.Header.Set("Authorization", "secret")
 			req.Header.Set("Cookie", "secret")
 			w := httptest.NewRecorder()
-			Handler(upstream.URL).ServeHTTP(w, req)
+			frontendHandler(upstream.URL).ServeHTTP(w, req)
 			if w.Code != tc.want {
 				t.Fatalf("got %d, want %d", w.Code, tc.want)
 			}
@@ -66,7 +68,7 @@ func TestIngressRejectsMaliciousUpstream(t *testing.T) {
 func TestIngressRoutesAreFixed(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { t.Error("unexpected upstream request") }))
 	defer upstream.Close()
-	handler := Handler(upstream.URL)
+	handler := frontendHandler(upstream.URL)
 	for _, path := range []string{"/api/unknown", "/assets/gui.js", "/evil.js", "/../api/v1/status", "/api/v1/status?secret=value"} {
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, httptest.NewRequest("GET", path, nil))

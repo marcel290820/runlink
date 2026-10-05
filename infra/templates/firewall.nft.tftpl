@@ -19,7 +19,7 @@ table inet runlink {
     tcp dport { 80, 443 } accept
 %{ endif ~}
 %{ if role == "b" ~}
-    ip saddr 10.77.0.10 ip daddr ${app_ip} tcp dport 8081 accept
+    ip saddr ${frontend_ip} ip daddr ${app_ip} tcp dport 8081 accept
 %{ endif ~}
 %{ if role == "c" ~}
     tcp dport { 80, 3478, 5349 } accept

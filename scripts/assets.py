@@ -22,7 +22,7 @@ def sri(name):
     return 'sha256-' + base64.b64encode(hashlib.sha256((root/name).read_bytes()).digest()).decode()
 
 approved = json.dumps([hashlib.sha256((root/'gui.js').read_bytes()).hexdigest()])
-write('loader.mjs', (root/'loader.template.mjs').read_text().replace('/* APPROVED_GUI */', approved))
+write('loader.mjs', (root.parent/'loader.template.mjs').read_text().replace('/* APPROVED_GUI */', approved))
 capture = (root/'capture.js').read_text().rstrip('\n')
 write('index.html', f'''<!doctype html>
 <html lang="en">

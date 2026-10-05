@@ -30,7 +30,6 @@ The app listens on `127.0.0.1:8081`; the frontend listens on `127.0.0.1:8080`.
 scripts/build.sh
 build/runlink --help
 build/runlink --version
-build/runlink assets-check
 build/runlink-server --help
 ```
 
