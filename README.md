@@ -13,7 +13,7 @@ run recovery, and process supervision remain future product work.
 Prerequisites: Git, Python 3.12 or newer, OpenSSL, a C compiler for Go's race
 instrumentation, and internet access for pinned tool downloads. Supported developer
 platforms are Linux and macOS on amd64 or arm64. Linux browser tests need Chromium's
-shared libraries; bootstrap supplies workspace-local libraries on Ubuntu 24.04 amd64.
+shared libraries; bootstrap supplies workspace-local libraries on Ubuntu 26.04 amd64.
 Other Linux distributions need compatible libraries already installed.
 
 ```bash

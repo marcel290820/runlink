@@ -49,11 +49,11 @@ target.symlink_to(go_binary)
 # Minimal Ubuntu hosts can extract pinned Chromium libraries without sudo.
 if key == 'linux_amd64' and Path('/etc/os-release').exists():
     os_release = Path('/etc/os-release').read_text()
-    if 'ID=ubuntu' in os_release and 'VERSION_ID="24.04"' in os_release:
+    if 'ID=ubuntu' in os_release and 'VERSION_ID="26.04"' in os_release:
         library_lock = json.loads((root/'scripts/linux-libs.lock.json').read_text())
         library_root = tools/'linux-libs'
         library_root.mkdir(exist_ok=True)
-        for artifact in library_lock['ubuntu_24.04_amd64']:
+        for artifact in library_lock['ubuntu_26.04_amd64']:
             with tempfile.TemporaryDirectory(dir=tools) as temp:
                 file = Path(temp)/'library.deb'
                 urllib.request.urlretrieve(artifact['url'], file)

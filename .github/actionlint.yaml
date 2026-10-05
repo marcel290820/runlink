@@ -1,0 +1,4 @@
+# actionlint 1.7.12 predates the GA ubuntu-26.04 hosted label (rhysd/actionlint#683).
+# Remove once a pinned actionlint release knows it.
+self-hosted-runner:
+  labels: [ubuntu-26.04]

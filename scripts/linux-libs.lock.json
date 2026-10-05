@@ -1,196 +1,208 @@
 {
-  "ubuntu_24.04_amd64": [
+  "ubuntu_26.04_amd64": [
     {
       "package": "libnspr4",
-      "version": "2:4.35-1.1build1",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/n/nspr/libnspr4_4.35-1.1build1_amd64.deb",
-      "sha256": "e579e72d091f6c7a13f5a756c31065b15aae5b81840d61b069355aa2283c07b4"
+      "version": "2:4.38.2-1ubuntu1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/n/nspr/libnspr4_4.38.2-1ubuntu1_amd64.deb",
+      "sha256": "2f28284b35765aaccad1785ab017425e1ca378c395256331f9c662d04335d43f"
     },
     {
       "package": "libnss3",
-      "version": "2:3.98-1ubuntu0.2",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/n/nss/libnss3_3.98-1ubuntu0.2_amd64.deb",
-      "sha256": "4254f11d782dfb970e78113519a59d440112ed43c4b56f709da0aef81da8651a"
+      "version": "2:3.120-1ubuntu2.1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/n/nss/libnss3_3.120-1ubuntu2.1_amd64.deb",
+      "sha256": "27ae6a8dbc2b8b750731c9098abb8750c5d584c79c5a024316d0b3c9bb50971c"
     },
     {
       "package": "libatk1.0-0t64",
-      "version": "2.52.0-1build1",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/a/at-spi2-core/libatk1.0-0t64_2.52.0-1build1_amd64.deb",
-      "sha256": "42c5d4b00954f17c2c3c4b866844f691eb8b6d57bf08b59203e65f12dc84a4f9"
+      "version": "2.60.4-0ubuntu0.1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/a/at-spi2-core/libatk1.0-0t64_2.60.4-0ubuntu0.1_amd64.deb",
+      "sha256": "6308ae8c10599780f0e672a39930c07639523bf3f7406f90ee7dada6acd505a0"
     },
     {
       "package": "libatk-bridge2.0-0t64",
-      "version": "2.52.0-1build1",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/a/at-spi2-core/libatk-bridge2.0-0t64_2.52.0-1build1_amd64.deb",
-      "sha256": "22b7d47e3c0f7953a78d3cfd309d1b20771085de9220fbe610c0989b9e808c9b"
+      "version": "2.60.4-0ubuntu0.1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/a/at-spi2-core/libatk-bridge2.0-0t64_2.60.4-0ubuntu0.1_amd64.deb",
+      "sha256": "c634e1fd25dff5d0ff5384bf3ac9d784725e776448591283cee67deaced29c27"
     },
     {
       "package": "libatspi2.0-0t64",
-      "version": "2.52.0-1build1",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/a/at-spi2-core/libatspi2.0-0t64_2.52.0-1build1_amd64.deb",
-      "sha256": "d686ace4080eca9c2d6ce8de69392a5ac56c846701894c0858922d4ce341a1d7"
+      "version": "2.60.4-0ubuntu0.1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/a/at-spi2-core/libatspi2.0-0t64_2.60.4-0ubuntu0.1_amd64.deb",
+      "sha256": "6db6e1d7d40f15d38ab5ec302463ac502a057560294d9c73ede22998f733fbd8"
     },
     {
       "package": "libxcomposite1",
-      "version": "1:0.4.5-1build3",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxcomposite/libxcomposite1_0.4.5-1build3_amd64.deb",
-      "sha256": "a12d5d9ae70b798cbbf284080eae32b87367561fc9c24492f641b8860ac0f308"
+      "version": "1:0.4.6-1build1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxcomposite/libxcomposite1_0.4.6-1build1_amd64.deb",
+      "sha256": "b8557d5aba1e575acfb169f47e798c449c8a5ca05846861f1480724d4cfc5ce3"
     },
     {
       "package": "libxdamage1",
-      "version": "1:1.1.6-1build1",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxdamage/libxdamage1_1.1.6-1build1_amd64.deb",
-      "sha256": "6891faf325e996ebd28ef53ebb9c043dc96f67327500490affc3e89d366d35ed"
+      "version": "1:1.1.7-1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxdamage/libxdamage1_1.1.7-1_amd64.deb",
+      "sha256": "dd751597c6216105774a93769972d1cb6dad5fd1ba91f090197d7acc85c406cb"
     },
     {
       "package": "libxext6",
-      "version": "2:1.3.4-1build2",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxext/libxext6_1.3.4-1build2_amd64.deb",
-      "sha256": "45783969a9ece9d7b7b733b8c60981584c53c6bc5ee3b42d295d2f80d1285679"
+      "version": "2:1.3.4-1build3",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxext/libxext6_1.3.4-1build3_amd64.deb",
+      "sha256": "b867ba9daa9437ba3f18cba9646d9e3db55e5197bd4feb53184b1414c05210ca"
     },
     {
       "package": "libxfixes3",
-      "version": "1:6.0.0-2build1",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxfixes/libxfixes3_6.0.0-2build1_amd64.deb",
-      "sha256": "0ee1015cccd063249e01c0cd0bf45f513c8ac9a1e5e485070c12e69192455e4a"
+      "version": "1:6.0.0-2build2",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxfixes/libxfixes3_6.0.0-2build2_amd64.deb",
+      "sha256": "f3a71f6aa12000480c419e44f3aa5bdca7eb862b720d0307661b4e886db1c5f8"
     },
     {
       "package": "libxrandr2",
-      "version": "2:1.5.2-2build1",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxrandr/libxrandr2_1.5.2-2build1_amd64.deb",
-      "sha256": "f2955a5e594f5724b58ad241d9231ea191cb36574a0d5e5ca6b661cd41d6256d"
+      "version": "2:1.5.4-1build1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxrandr/libxrandr2_1.5.4-1build1_amd64.deb",
+      "sha256": "d0052315ac1417234777c0872568a86fce4d3a3316c041e5a2200da70f43a855"
     },
     {
       "package": "libgbm1",
-      "version": "25.2.8-0ubuntu0.24.04.4",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/m/mesa/libgbm1_25.2.8-0ubuntu0.24.04.4_amd64.deb",
-      "sha256": "4bfe348b456db5b445a80e0a3ffb9e9a01b91499bb86e0e568ca3634b134da7e"
+      "version": "26.0.8-1ubuntu0.3",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/m/mesa/libgbm1_26.0.8-1ubuntu0.3_amd64.deb",
+      "sha256": "5d2d1eaf0f72c5a2c4aef692e5660c6fa61e46542c4d9cb5593ba8bd020b2eea"
     },
     {
       "package": "libasound2t64",
-      "version": "1.2.11-1ubuntu0.3",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/a/alsa-lib/libasound2t64_1.2.11-1ubuntu0.3_amd64.deb",
-      "sha256": "5d17bfb5683eb99f1be951fe48e1be5bf3c52391913b6b74a8aecf9b4f5e779f"
+      "version": "1.2.15.3-1ubuntu1.1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/a/alsa-lib/libasound2t64_1.2.15.3-1ubuntu1.1_amd64.deb",
+      "sha256": "96e20cf5c9095ef54ba46fccffea5c01cf2de17a1012c5683a67e43504a6d726"
     },
     {
       "package": "libdrm2",
-      "version": "2.4.125-1ubuntu0.1~24.04.2",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm2_2.4.125-1ubuntu0.1~24.04.2_amd64.deb",
-      "sha256": "4d3e858dd57be617c49d87c5ddcdb35df744a4f0a559981256ae2ba174718584"
+      "version": "2.4.131-1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm2_2.4.131-1_amd64.deb",
+      "sha256": "b87e6f715d0795a88b53fbe268004a1acbd0d728da0cc0ab9108aff5ab4e1929"
     },
     {
       "package": "libwayland-server0",
-      "version": "1.22.0-2.1build1",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/w/wayland/libwayland-server0_1.22.0-2.1build1_amd64.deb",
-      "sha256": "edbfa4b6857691ae922cc768a753fab230eee9e956aa2ce4f2eaa8d9ad777dca"
+      "version": "1.24.0-2",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/w/wayland/libwayland-server0_1.24.0-2_amd64.deb",
+      "sha256": "9f0278d02d401c9fd0f2b4b06d37ea0b1e7cecbb6a8d2539427f810d80c409dc"
     },
     {
       "package": "libxcb-dri3-0",
-      "version": "1.15-1ubuntu2",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxcb/libxcb-dri3-0_1.15-1ubuntu2_amd64.deb",
-      "sha256": "3d3d0e95e56ae16010a84883196b8153cba62d6831f9aaee2a68c46f20c7c004"
+      "version": "1.17.0-2ubuntu1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxcb/libxcb-dri3-0_1.17.0-2ubuntu1_amd64.deb",
+      "sha256": "2e0e3916c647a74e081621f385aa296dab3052b2582b0781d9fbea2f15696ef4"
     },
     {
       "package": "libxcb-present0",
-      "version": "1.15-1ubuntu2",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxcb/libxcb-present0_1.15-1ubuntu2_amd64.deb",
-      "sha256": "2e36e6557e87dbfd64df3143cbf81a4f75c3447501a545b4730511d228b0dd17"
+      "version": "1.17.0-2ubuntu1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxcb/libxcb-present0_1.17.0-2ubuntu1_amd64.deb",
+      "sha256": "64f23e7166461758d158220305e93a98fe75c570b68f96303a1c2395a58d5d7d"
     },
     {
       "package": "libxcb-sync1",
-      "version": "1.15-1ubuntu2",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxcb/libxcb-sync1_1.15-1ubuntu2_amd64.deb",
-      "sha256": "14286795a258593259923619073e50c15345673befae2733f7b0577b07359aa8"
+      "version": "1.17.0-2ubuntu1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxcb/libxcb-sync1_1.17.0-2ubuntu1_amd64.deb",
+      "sha256": "8883f5e6badab24cb7487390bf1a888bb714e406f6c799345c33e4b69a8f3112"
     },
     {
       "package": "libxshmfence1",
-      "version": "1.3-1build5",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxshmfence/libxshmfence1_1.3-1build5_amd64.deb",
-      "sha256": "bc6de4bfaf9050a8ba83d4bcfb114131b081084a7972c03417f8523d52b5c742"
+      "version": "1.3.3-1build1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxshmfence/libxshmfence1_1.3.3-1build1_amd64.deb",
+      "sha256": "85d6b6883a35e1a3b78af3dda6bb6b843c06cbead030a00d9de7d31a8077d562"
     },
     {
       "package": "libxrender1",
-      "version": "1:0.9.10-1.1build1",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxrender/libxrender1_0.9.10-1.1build1_amd64.deb",
-      "sha256": "d70bd831aebe8d4834b5dd2ed98df26dd6bd27f1042c47543bd7f66df1ae22ea"
+      "version": "1:0.9.12-1build1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxrender/libxrender1_0.9.12-1build1_amd64.deb",
+      "sha256": "60b2f01e8124318e2a11049b82c764fd4c05c21adba11312e93ab116d6594f1e"
     },
     {
       "package": "libxi6",
-      "version": "2:1.8.1-1build1",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxi/libxi6_1.8.1-1build1_amd64.deb",
-      "sha256": "0ea7acb5e8a8ce4d6653b30e03a319bfe136db7bfb5ee7cad34c2aa1272ea8d9"
+      "version": "2:1.8.2-2",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxi/libxi6_1.8.2-2_amd64.deb",
+      "sha256": "b975dd89cac8c32a3cf622e1b7f5434db59f37eda87dfee399d0806d9953db0a"
+    },
+    {
+      "package": "libxres1",
+      "version": "2:1.2.1-1build2",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libx/libxres/libxres1_1.2.1-1build2_amd64.deb",
+      "sha256": "c7794a754880ef7bde4a73c0257dd48d8e3f387ee1618ba97f8e5cf5cdd7c80f"
     },
     {
       "package": "nftables",
-      "version": "1.0.9-1ubuntu0.1",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/n/nftables/nftables_1.0.9-1ubuntu0.1_amd64.deb",
-      "sha256": "d648859fccde3c17b8b9b89993427564f91f394a39306db1f67bd5ea3ac42c6e"
+      "version": "1.1.6-1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/n/nftables/nftables_1.1.6-1_amd64.deb",
+      "sha256": "fcdeae9ed9761550619d062f8ae87a2399c84ab87f4535bcb9ab0d3649aba59a"
     },
     {
       "package": "libnftables1",
-      "version": "1.0.9-1ubuntu0.1",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/n/nftables/libnftables1_1.0.9-1ubuntu0.1_amd64.deb",
-      "sha256": "fcaee001747a6adaa0cd9337fef437b3aa7a7a6d5246b62fbd4784d3d6a5009e"
+      "version": "1.1.6-1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/n/nftables/libnftables1_1.1.6-1_amd64.deb",
+      "sha256": "0e5abb5719052d9f12aadf91a3f3d5192a2e85d035ee81d07c3055a0f79d8b8f"
     },
     {
       "package": "libnftnl11",
-      "version": "1.2.6-2build1",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libn/libnftnl/libnftnl11_1.2.6-2build1_amd64.deb",
-      "sha256": "e5bde5c9cbb95082700011f0b7ef2c0a41900b0a9fd7434f6e90448e2a7b4e50"
+      "version": "1.3.1-1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libn/libnftnl/libnftnl11_1.3.1-1_amd64.deb",
+      "sha256": "a2f4d4a4ce3fac7e473c8de60a3d8948a58e9850cd8e2ced17263aa73dda7199"
     },
     {
       "package": "libmnl0",
-      "version": "1.0.5-2build1",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libm/libmnl/libmnl0_1.0.5-2build1_amd64.deb",
-      "sha256": "5170658bf0eaf54a8c7d53061ca6b47a6cf33a83543a75fa521de7046cb7197a"
+      "version": "1.0.5-3build1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libm/libmnl/libmnl0_1.0.5-3build1_amd64.deb",
+      "sha256": "ab5e2781b0e2a2155cf154c658a2e6cf419d95a28c3121aefb159df6453102e5"
+    },
+    {
+      "package": "libxtables12",
+      "version": "1.8.11-2ubuntu3",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/i/iptables/libxtables12_1.8.11-2ubuntu3_amd64.deb",
+      "sha256": "e21126e0544e3b795633fb5b06bb7f2b9a493ebc5ab07b007db0f7f68c0a0aed"
     },
     {
       "package": "coturn",
-      "version": "4.6.1-1build4",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/universe/c/coturn/coturn_4.6.1-1build4_amd64.deb",
-      "sha256": "4c14eb45b96b23b63a912afc1f54657a1c9c67b52b582ff45b3427cc3c182604"
+      "version": "4.6.1-2build2",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/universe/c/coturn/coturn_4.6.1-2build2_amd64.deb",
+      "sha256": "eef2144efb4dc872816506d798f97e69bd3dcaba1a3c64d84ee14f40e6cd7e4a"
     },
     {
       "package": "libevent-core-2.1-7t64",
-      "version": "2.1.12-stable-9ubuntu2.2",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libe/libevent/libevent-core-2.1-7t64_2.1.12-stable-9ubuntu2.2_amd64.deb",
-      "sha256": "2a5264b572f5fe50fc9d63e115d308c79b9fb746d13cc55b5ea1f0f01a78daa7"
+      "version": "2.1.12-stable-10ubuntu0.2",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libe/libevent/libevent-core-2.1-7t64_2.1.12-stable-10ubuntu0.2_amd64.deb",
+      "sha256": "234686b4ff695c2a1c937282ef4e8e2e37abef8a064dfa8a6eaa365ab6a45400"
     },
     {
       "package": "libevent-extra-2.1-7t64",
-      "version": "2.1.12-stable-9ubuntu2.2",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libe/libevent/libevent-extra-2.1-7t64_2.1.12-stable-9ubuntu2.2_amd64.deb",
-      "sha256": "0cb0db6b496baa12252451d63516df02981fbb5adbe523a82983a6c3bffda747"
+      "version": "2.1.12-stable-10ubuntu0.2",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libe/libevent/libevent-extra-2.1-7t64_2.1.12-stable-10ubuntu0.2_amd64.deb",
+      "sha256": "a20c1772dacf449cb100ce3e79aa7203f9431aeeec8e3c472cfa8783d34ad52c"
     },
     {
       "package": "libevent-openssl-2.1-7t64",
-      "version": "2.1.12-stable-9ubuntu2.2",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libe/libevent/libevent-openssl-2.1-7t64_2.1.12-stable-9ubuntu2.2_amd64.deb",
-      "sha256": "d2d3e4bb39e969574117006217fbb34c33c66d40e0973205bcb637d9306a3aed"
+      "version": "2.1.12-stable-10ubuntu0.2",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libe/libevent/libevent-openssl-2.1-7t64_2.1.12-stable-10ubuntu0.2_amd64.deb",
+      "sha256": "d6936b7e34362743da215ce1218a8fd993db8cbed8411a24e2488b2aee4a411d"
     },
     {
       "package": "libevent-pthreads-2.1-7t64",
-      "version": "2.1.12-stable-9ubuntu2.2",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libe/libevent/libevent-pthreads-2.1-7t64_2.1.12-stable-9ubuntu2.2_amd64.deb",
-      "sha256": "0adf5bc30f0326ad4aa36541f4dfa4a0d5f42c5564f74c0112caf8b3c13a7fbb"
+      "version": "2.1.12-stable-10ubuntu0.2",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/libe/libevent/libevent-pthreads-2.1-7t64_2.1.12-stable-10ubuntu0.2_amd64.deb",
+      "sha256": "a181c67e594c2c01524d00e39d922615d72feea59d810a34455f5c908b6253a9"
     },
     {
       "package": "libhiredis1.1.0",
-      "version": "1.2.0-6ubuntu3",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/universe/h/hiredis/libhiredis1.1.0_1.2.0-6ubuntu3_amd64.deb",
-      "sha256": "912a25553f29a47d1524c0b58a3c5bff2d067109da2adae9fa9c4fb15efaa568"
+      "version": "1.2.0-6ubuntu4",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/universe/h/hiredis/libhiredis1.1.0_1.2.0-6ubuntu4_amd64.deb",
+      "sha256": "d01417ced1b484e5a39903280e4d704b9399ad8dc574a7209eaa2292e570cbfe"
     },
     {
-      "package": "libmysqlclient21",
-      "version": "8.0.46-0ubuntu0.24.04.4",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/m/mysql-8.0/libmysqlclient21_8.0.46-0ubuntu0.24.04.4_amd64.deb",
-      "sha256": "830f21eb986cca5b9fb46c258a7d081a95cb8ebfde142bac3e9b7b5fb6418dbc"
+      "package": "libmysqlclient24",
+      "version": "8.4.11-0ubuntu0.26.04.1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/m/mysql-8.4/libmysqlclient24_8.4.11-0ubuntu0.26.04.1_amd64.deb",
+      "sha256": "d183043ad76ae04f823791993d36792abfa4f5e650013af9ad4520ea4312ea1a"
     },
     {
       "package": "libpq5",
-      "version": "16.15-0ubuntu0.24.04.1",
-      "url": "https://archive.ubuntu.com/ubuntu/pool/main/p/postgresql-16/libpq5_16.15-0ubuntu0.24.04.1_amd64.deb",
-      "sha256": "3f96dd36bcd7841172c1ead4965da20a193bb9ccf9a93a3f5a3ac7f56369dbb1"
+      "version": "18.6-0ubuntu0.26.04.1",
+      "url": "https://archive.ubuntu.com/ubuntu/pool/main/p/postgresql-18/libpq5_18.6-0ubuntu0.26.04.1_amd64.deb",
+      "sha256": "7e9199f54290b04a28e9f136207624ca30b0988d613159977fd84e8b4467e0a4"
     }
   ]
 }
