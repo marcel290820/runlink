@@ -17,7 +17,7 @@ root=Path(__file__).resolve().parents[1]
 server_binary=shutil.which('turnserver')
 client_binary=shutil.which('turnutils_uclient')
 if not server_binary or not client_binary:
-    print('coturn runtime check unavailable on this platform; run on bootstrapped Ubuntu 24.04 amd64')
+    print('coturn runtime check unavailable on this platform; run on bootstrapped Ubuntu 26.04 amd64')
     raise SystemExit(0)
 with tempfile.TemporaryDirectory(prefix='runlink-turn-') as temp:
     fixture=Path(temp)

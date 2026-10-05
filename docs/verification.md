@@ -10,7 +10,10 @@ The shared gate is `scripts/check.sh`. It has been executed on Ubuntu 24.04 amd6
 with workspace-installed tools. A clean copy of all proposed sources also bootstrapped
 from empty caches and passed the same gate. The documented `scripts/dev.sh` command
 was exercised there: both readiness endpoints, frontend-to-app ingress, private state,
-and cleanup of both children after SIGTERM passed. Its checks cover:
+and cleanup of both children after SIGTERM passed. After the move to the Ubuntu 26.04
+baseline, a clean copy bootstrapped from empty caches and passed the gate in an
+`ubuntu:26.04` container, including cloud-init schema and systemd unit validation;
+Chrome's base libraries were installed there as hosted runners provide them. Its checks cover:
 
 | Area | Evidence |
 | --- | --- |

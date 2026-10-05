@@ -33,7 +33,7 @@ locals {
     for role in local.roles : role => {
       package_update  = true
       package_upgrade = true
-      packages        = concat(["ca-certificates", "python3", "nftables", "unattended-upgrades"], role != "b" ? ["certbot"] : [], [for package in ["coturn"] : [package, "4.6.1-1build4"] if role == "c"])
+      packages        = concat(["ca-certificates", "python3", "nftables", "unattended-upgrades"], role != "b" ? ["certbot"] : [], [for package in ["coturn"] : [package, "4.6.1-2build2"] if role == "c"])
       users = [
         "default",
         { name = "runlink", uid = 980, system = true, shell = "/usr/sbin/nologin", lock_passwd = true },
@@ -113,7 +113,7 @@ resource "hcloud_firewall" "runlink" {
 resource "hcloud_server" "runlink" {
   for_each           = local.roles
   name               = "runlink-${each.key}"
-  image              = "ubuntu-24.04"
+  image              = "ubuntu-26.04"
   server_type        = var.server_type
   location           = var.location
   ssh_keys           = [hcloud_ssh_key.admin.id]

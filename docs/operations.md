@@ -130,7 +130,7 @@ TURN is bounded to 100 allocations, four per credential username, ten-minute
 allocation lifetime, 1 MiB/s per allocation, and 50 MiB/s aggregate. These bandwidth
 settings use bytes per second. Issuance rate/credential lifetimes and abuse controls
 remain product work on B; no public issuance endpoint exists. Renewed allocations
-still require traffic/cost monitoring. Coturn is pinned to Ubuntu's 4.6.1-1build4 package
+still require traffic/cost monitoring. Coturn is pinned to Ubuntu's 4.6.1-2build2 package
 for this baseline; OS security updates are enabled and operators must review future
-package changes and rerun connectivity proofs. The Ubuntu 24.04 image is an updated
+package changes and rerun connectivity proofs. The Ubuntu 26.04 image is an updated
 OS baseline rather than an immutable image snapshot.

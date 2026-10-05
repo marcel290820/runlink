@@ -7,7 +7,7 @@
 `govulncheck` 1.8.0 with module checksum verification. Versions and archive checksums
 live in [tools.lock.json](../scripts/tools.lock.json). `npm ci` uses the checked-in
 lockfile for Playwright 1.63.0 and YAML 2.9.1. Playwright pins its Chromium revision.
-Ubuntu 24.04 amd64 validator/browser libraries are checksum-pinned in
+Ubuntu 26.04 amd64 validator/browser libraries are checksum-pinned in
 [linux-libs.lock.json](../scripts/linux-libs.lock.json), downloaded and extracted
 without installing host packages. The host Python/OpenSSL/C compiler are prerequisites.
 
@@ -95,8 +95,8 @@ remain closed. WSS must receive its own boundary checks when implemented.
 
 ## Shared checks and CI
 
-The same `scripts/check.sh` runs locally and on standard `ubuntu-24.04` and
-`macos-15` hosted runners. It checks generated assets, Go formatting, shell lint,
+The same `scripts/check.sh` runs locally and on standard `ubuntu-26.04` and
+`macos-26` hosted runners. It checks generated assets, Go formatting, shell lint,
 JavaScript/Python syntax, workflow YAML/action pins, Go vet, race-enabled behavioral
 tests, both builds, actual CLI/SIGTERM behavior, Chromium browser behavior,
 OpenTofu and rendered configuration, loopback coturn UDP/TCP/TLS, local release lifecycle, Go vulnerabilities,
