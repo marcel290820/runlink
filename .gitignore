@@ -1,0 +1,13 @@
+.tools/
+node_modules/
+build/
+dist/
+var/
+infra/.terraform/
+infra/*.tfstate*
+infra/*.tfplan
+infra/*.auto.tfvars
+infra/terraform.tfvars
+*.pem
+*.key
+__pycache__/

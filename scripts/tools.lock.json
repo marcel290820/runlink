@@ -1,0 +1,135 @@
+{
+  "go_install": {
+    "govulncheck": "golang.org/x/vuln/cmd/govulncheck@v1.8.0"
+  },
+  "platforms": {
+    "darwin_amd64": {
+      "actionlint": {
+        "binary": "actionlint",
+        "sha256": "5b44c3bc2255115c9b69e30efc0fecdf498fdb63c5d58e17084fd5f16324c644",
+        "url": "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_darwin_amd64.tar.gz",
+        "version": "1.7.12"
+      },
+      "go": {
+        "binary": "go/bin/go",
+        "sha256": "8f8f52c6649542cf027bbc9b9c68d1ec042f9f34808a40413f0b8b3f66f3caa4",
+        "url": "https://go.dev/dl/go1.27.1.darwin-amd64.tar.gz",
+        "version": "1.27.1"
+      },
+      "node": {
+        "binary": "node-v24.21.0-darwin-x64/bin/node",
+        "sha256": "1462cb3b3046b815cf8ea436d3da450ec1a9f11dac7e5a46b0ada5305d7e8097",
+        "url": "https://nodejs.org/dist/v24.21.0/node-v24.21.0-darwin-x64.tar.gz",
+        "version": "24.21.0"
+      },
+      "shellcheck": {
+        "binary": "shellcheck-v0.11.0/shellcheck",
+        "sha256": "c2c15e08df0e8fbc374c335b230a7ee958c313fa5714817a59aa59f1aa594f51",
+        "url": "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.x86_64.tar.gz",
+        "version": "0.11.0"
+      },
+      "tofu": {
+        "binary": "tofu",
+        "sha256": "a73720443ba38712d7d96dc1e857add02c15a790919c653ad07492e9952f8c27",
+        "url": "https://github.com/opentofu/opentofu/releases/download/v1.13.1/tofu_1.13.1_darwin_amd64.tar.gz",
+        "version": "1.13.1"
+      }
+    },
+    "darwin_arm64": {
+      "actionlint": {
+        "binary": "actionlint",
+        "sha256": "aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f",
+        "url": "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_darwin_arm64.tar.gz",
+        "version": "1.7.12"
+      },
+      "go": {
+        "binary": "go/bin/go",
+        "sha256": "ee215d57e0ec269c60cc9ceca68e6bda321ba9ee5afe24f4b0988703c2d87d12",
+        "url": "https://go.dev/dl/go1.27.1.darwin-arm64.tar.gz",
+        "version": "1.27.1"
+      },
+      "node": {
+        "binary": "node-v24.21.0-darwin-arm64/bin/node",
+        "sha256": "bed7eea5325e1108f32ce5228ddd6a5f0f08a499ee42aa7442aea583702f6057",
+        "url": "https://nodejs.org/dist/v24.21.0/node-v24.21.0-darwin-arm64.tar.gz",
+        "version": "24.21.0"
+      },
+      "shellcheck": {
+        "binary": "shellcheck-v0.11.0/shellcheck",
+        "sha256": "339b930feb1ea764467013cc1f72d09cd6b869ebf1013296ba9055ab2ffbd26f",
+        "url": "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.darwin.aarch64.tar.gz",
+        "version": "0.11.0"
+      },
+      "tofu": {
+        "binary": "tofu",
+        "sha256": "be78f659f04ef06a9dbd9b3934d46af95d787a3aa38396d459dea395261816a9",
+        "url": "https://github.com/opentofu/opentofu/releases/download/v1.13.1/tofu_1.13.1_darwin_arm64.tar.gz",
+        "version": "1.13.1"
+      }
+    },
+    "linux_amd64": {
+      "actionlint": {
+        "binary": "actionlint",
+        "sha256": "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8",
+        "url": "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz",
+        "version": "1.7.12"
+      },
+      "go": {
+        "binary": "go/bin/go",
+        "sha256": "63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445",
+        "url": "https://go.dev/dl/go1.27.1.linux-amd64.tar.gz",
+        "version": "1.27.1"
+      },
+      "node": {
+        "binary": "node-v24.21.0-linux-x64/bin/node",
+        "sha256": "6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff",
+        "url": "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.gz",
+        "version": "24.21.0"
+      },
+      "shellcheck": {
+        "binary": "shellcheck-v0.11.0/shellcheck",
+        "sha256": "b7af85e41cc99489dcc21d66c6d5f3685138f06d34651e6d34b42ec6d54fe6f6",
+        "url": "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.gz",
+        "version": "0.11.0"
+      },
+      "tofu": {
+        "binary": "tofu",
+        "sha256": "378ada19d4bc70c43732004e8159be771b23b9a5afdf059e5f8a2b3fa2c70a69",
+        "url": "https://github.com/opentofu/opentofu/releases/download/v1.13.1/tofu_1.13.1_linux_amd64.tar.gz",
+        "version": "1.13.1"
+      }
+    },
+    "linux_arm64": {
+      "actionlint": {
+        "binary": "actionlint",
+        "sha256": "325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6",
+        "url": "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_arm64.tar.gz",
+        "version": "1.7.12"
+      },
+      "go": {
+        "binary": "go/bin/go",
+        "sha256": "3450b45a3f9ee8568792736a5c5e70a1f2e9b36c35a8f74958c03e51d7d92bec",
+        "url": "https://go.dev/dl/go1.27.1.linux-arm64.tar.gz",
+        "version": "1.27.1"
+      },
+      "node": {
+        "binary": "node-v24.21.0-linux-arm64/bin/node",
+        "sha256": "724282c3b43aec998aa9527380465b45d229e021b58035f5f4f63095eabfe5d5",
+        "url": "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-arm64.tar.gz",
+        "version": "24.21.0"
+      },
+      "shellcheck": {
+        "binary": "shellcheck-v0.11.0/shellcheck",
+        "sha256": "68a8133197a50beb8803f8d42f9908d1af1c5540d4bb05fdfca8c1fa47decefc",
+        "url": "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.aarch64.tar.gz",
+        "version": "0.11.0"
+      },
+      "tofu": {
+        "binary": "tofu",
+        "sha256": "9c1ef375aa1852db0b2888aa921b640c71f8140d4682aa4fec99378a64fa7dc3",
+        "url": "https://github.com/opentofu/opentofu/releases/download/v1.13.1/tofu_1.13.1_linux_arm64.tar.gz",
+        "version": "1.13.1"
+      }
+    }
+  }
+}

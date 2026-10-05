@@ -1,0 +1,9 @@
+:root { color-scheme: light dark; font: 18px/1.5 system-ui, sans-serif; }
+body { max-width: 42rem; margin: 8vh auto; padding: 1.5rem; }
+h1 { margin-bottom: .25rem; }
+label, input { display: block; }
+input, button { font: inherit; padding: .6rem; margin-top: .5rem; }
+input { width: 100%; box-sizing: border-box; }
+button { cursor: pointer; }
+input:focus-visible, button:focus-visible { outline: 3px solid #5898ec; outline-offset: 2px; }
+.note { font-size: .85rem; }

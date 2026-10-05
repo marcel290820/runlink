@@ -1,0 +1,26 @@
+{
+  "capture.js": {
+    "sha256": "d38c85fc7851fbd6d3de99a07089f152a3a4026ccc80f666f6aa4d000758b4fb",
+    "size": 414
+  },
+  "gui.js": {
+    "sha256": "4358bb62e16ade9f3336dba8742d97b27b5a09f71bee70a7e5895e86564fbe23",
+    "size": 335
+  },
+  "index.html": {
+    "sha256": "15eaa302b679d88ae9c3943c533cf1fcfa66ba20133f6c25d5c628b1706104b9",
+    "size": 1425
+  },
+  "loader.mjs": {
+    "sha256": "c96fd06f6c0382d2721ae62c1cc834d94f5b00c857ad04d8db714886823a63f8",
+    "size": 1971
+  },
+  "loader.template.mjs": {
+    "sha256": "7393952ae8a0974ac70e19696c255b202e148f93979d3a29f895037d9b8195ab",
+    "size": 1921
+  },
+  "style.css": {
+    "sha256": "6d503e58bdb6e14923c266c846f7041ad53191fa86c1195a2605b3a1444db167",
+    "size": 466
+  }
+}

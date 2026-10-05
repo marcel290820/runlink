@@ -2,7 +2,7 @@
 
 [Architecture overview and ADR index](README.md)
 
-Planning only. Complete each proof before broadening scope. ADRs record the design; this page tracks the work needed to deliver it.
+The [local foundation](../README.md) now supplies both executables, the loader/GUI asset boundary, shared checks, hosted CI configuration, three-server infrastructure, and signed release/deployment tooling. See [verification](../docs/verification.md) for executed checks and limits. Product transport, authentication, registry, task execution, recovery, and supervision remain planned. Complete each proof before broadening scope. ADRs record the design; this page tracks the work needed to deliver it.
 
 ## Build sequence
 
@@ -29,7 +29,7 @@ These are acceptance criteria for future implementation, not tests that have alr
 
 ## Shared check gate
 
-Create vendor-neutral `scripts/check.sh` before the first feature; local checks and GitHub Actions run the same gate: formatting/lint, Go vet, typechecking/compilation, race-enabled tests, and both builds. Add focused browser/protocol checks as those paths land. Pin tools, dependencies, and actions; verify commands locally. Configure required-check branch protection separately.
+`scripts/check.sh` and GitHub Actions now run the same gate: formatting/lint, Go vet, typechecking/compilation, race-enabled tests, and both builds. Focused browser, lifecycle, ingress, release, and infrastructure checks are present; add protocol checks as those paths land. Tools, dependencies, providers, and actions are pinned. Hosted runner execution remains external. Maintainers may review required checks manually; no branch protection is configured by this scaffold.
 
 ## Open items
 

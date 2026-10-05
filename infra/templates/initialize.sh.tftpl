@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+set -euo pipefail
+install -d -m 755 -o runlink-release -g runlink-release /opt/runlink /opt/runlink/releases
+install -d -m 700 -o runlink -g runlink /var/lib/runlink
+install -d -m 750 -o root -g runlink /etc/runlink
+%{ if role == "c" ~}
+# Disable the distribution service: this stack uses its own bounded unit.
+systemctl disable --now coturn
+%{ endif ~}
+%{ if role != "b" ~}
+install -d -m 750 -o root -g runlink /etc/runlink/tls
+%{ endif ~}
+systemctl daemon-reload
+systemctl enable --now nftables
+%{ if role == "a" ~}
+systemctl enable runlink-frontend
+# TLS ingress starts after certificates and a verified release are installed.
+%{ endif ~}
+%{ if role == "b" ~}
+systemctl enable runlink-app
+%{ endif ~}
+%{ if role == "c" ~}
+systemctl enable runlink-turn
+# Operator supplies DNS, TLS certificates and the shared secret separately.
+%{ endif ~}

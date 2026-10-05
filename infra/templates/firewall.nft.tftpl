@@ -1,0 +1,56 @@
+#!/usr/sbin/nft -f
+# Dedicated new Runlink VMs only. Never apply to an existing host.
+flush ruleset
+
+table inet runlink {
+  chain input {
+    type filter hook input priority 0; policy drop;
+    ct state invalid drop
+    ct state established,related accept
+    iifname "lo" accept
+    meta l4proto { icmp, ipv6-icmp } accept
+%{ if admin4 != "" ~}
+    ip saddr { ${admin4} } tcp dport 22 accept
+%{ endif ~}
+%{ if admin6 != "" ~}
+    ip6 saddr { ${admin6} } tcp dport 22 accept
+%{ endif ~}
+%{ if role == "a" ~}
+    tcp dport { 80, 443 } accept
+%{ endif ~}
+%{ if role == "b" ~}
+    ip saddr 10.77.0.10 ip daddr ${app_ip} tcp dport 8081 accept
+%{ endif ~}
+%{ if role == "c" ~}
+    tcp dport { 80, 3478, 5349 } accept
+    udp dport 3478 accept
+    udp dport 49160-49259 accept
+%{ endif ~}
+  }
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+  }
+  chain output {
+    type filter hook output priority 0; policy accept;
+%{ if role == "c" ~}
+    # Enforce relay policy before accepting established/local traffic.
+    meta skuid 980 jump turn_egress
+%{ endif ~}
+  }
+%{ if role == "c" ~}
+  chain turn_egress {
+    ip daddr { 0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/3, ${frontend4}, ${app4} } drop
+    ip6 daddr { ::/128, ::1/128, fc00::/7, fe80::/10, fec0::/10, ff00::/8, ${frontend6}, ${app6} } drop
+    # The sole C-address exception is UDP to its relay port range, including local delivery.
+    ip daddr ${turn4} udp dport 49160-49259 accept
+    ip6 daddr ${turn6} udp dport 49160-49259 accept
+    ip daddr ${turn4} drop
+    ip6 daddr ${turn6} drop
+    # Public remote peers may receive relay UDP only. Client-facing TCP/TLS stays usable.
+    udp sport 49160-49259 accept
+    udp sport 3478 accept
+    tcp sport { 3478, 5349 } accept
+    reject
+  }
+%{ endif ~}
+}
