@@ -63,15 +63,16 @@ Readiness does not claim that future registration or task protocols exist.
 HTTP bounds are fixed: 5 s header read, 10 s request read, 15 s response write,
 30 s idle, 10 s graceful shutdown, and 16 KiB request headers. SIGINT/SIGTERM drains
 requests and closes the listener; expiry of the shutdown deadline forces closure.
-Lifecycle logs contain fixed events and the role only. Request URLs, headers,
-bodies, recipient secrets, task data, and raw network/configuration errors are excluded.
+Lifecycle logs contain fixed events and the role. Startup and serve failures include
+their cause for the operator. Request URLs, headers, bodies, recipient secrets, task
+data, and request-path errors are excluded.
 
 ## Browser trust boundary
 
-The owner CLI embeds all assets with `go:embed`. The trusted frontend serves only
-`/`, lowercase UUID task paths, and the exact loader/style/manifest routes. The
-GUI bundle is embedded in the owner binary but is not served by A as an asset.
-The future authenticated owner transport will deliver it.
+The server binary embeds the served assets with `go:embed`. The trusted frontend
+serves only `/`, lowercase UUID task paths, and the exact loader/style/manifest routes.
+The GUI bundle is neither embedded nor served by A. The future authenticated owner
+transport will embed it in the owner binary and deliver it.
 
 The first inline script captures a fragment in memory and clears the current URL
 and history state before the module loader starts. Separately entered secrets are

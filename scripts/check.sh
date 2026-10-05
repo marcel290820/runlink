@@ -10,7 +10,7 @@ python3 scripts/docs-check.py
 unformatted=$(gofmt -l cmd internal)
 [[ -z "$unformatted" ]] || { printf 'Run gofmt on:\n%s\n' "$unformatted" >&2; exit 1; }
 shellcheck scripts/*.sh
-for script in scripts/*.mjs internal/frontend/assets/*.mjs internal/frontend/assets/*.js; do
+for script in scripts/*.mjs internal/frontend/*.mjs internal/frontend/assets/*.mjs internal/frontend/assets/*.js; do
   node --check "$script"
 done
 python3 -m compileall -q scripts infra/templates/configure-turn.py

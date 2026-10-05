@@ -16,7 +16,7 @@ and cleanup of both children after SIGTERM passed. Its checks cover:
 | --- | --- |
 | Go foundation | Formatting, vet, compilation, both executable builds, race-enabled tests |
 | Runtime | Actual help/version/error commands, private writable-state setup, health/readiness, SIGTERM listener closure, header timeout, request drain and bounded forced shutdown; native HTTPS/HSTS with temporary certificates, obsolete TLS rejection and missing-material fail-closed behavior |
-| Browser assets | Deterministic regeneration check, complete embedded manifest, Chromium fragment/history cleanup, empty browser storage, reload and separate-secret entry, password field clearing, approved GUI execution and modified-GUI rejection |
+| Browser assets | Deterministic regeneration check, complete asset manifest, Chromium fragment/history cleanup, empty browser storage, reload and separate-secret entry, password field clearing, approved GUI execution and modified-GUI rejection |
 | Ingress | Malicious HTML/SVG/JS, redirects, unexpected statuses, oversize/error bodies, hostile MIME/CSP/cookie/worker headers, fixed routing, no credential-header forwarding, worker/upgrade rejection, actual browser API navigation/worker isolation |
 | CI | YAML parsing, actionlint, immutable action references, Linux/macOS hosted matrix, read-only permissions, short retention, shared gate invocation |
 | Infrastructure | OpenTofu format/validate, pinned provider initialization and four-platform checksum lock; mocked three-server apply and unrestricted-SSH rejection; actual cloud-init schema validation, shell syntax/lint, systemd unit validation in a temporary root |
@@ -31,7 +31,7 @@ loopback-peer exception, and does not apply a host firewall. It proves local rel
 behavior, not the production firewall/NAT acceptance criterion.
 
 The final native-TLS release was also cross-built for all four targets as
-`dist/v0.0.1-local`, inspected for both binaries and GUI/loader manifests, signed,
+`dist/v0.0.1-local`, inspected for both binaries and release metadata, signed,
 and verified using a temporary RSA key. That test key was discarded; these are local
 test artifacts. Repackage and sign with the separately established release key for
 an actual public release. Runtime execution was verified on Linux amd64; the other
@@ -92,12 +92,13 @@ Generated tools, caches, binaries, fixtures and archives are ignored.
 - [internal/frontend/assets/gui.js](../internal/frontend/assets/gui.js)
 - [internal/frontend/assets/index.html](../internal/frontend/assets/index.html)
 - [internal/frontend/assets/loader.mjs](../internal/frontend/assets/loader.mjs)
-- [internal/frontend/assets/loader.template.mjs](../internal/frontend/assets/loader.template.mjs)
 - [internal/frontend/assets/manifest.json](../internal/frontend/assets/manifest.json)
 - [internal/frontend/assets/style.css](../internal/frontend/assets/style.css)
 - [internal/frontend/frontend.go](../internal/frontend/frontend.go)
-- [internal/frontend/frontend_test.go](../internal/frontend/frontend_test.go)
+- [internal/frontend/loader.template.mjs](../internal/frontend/loader.template.mjs)
 - [internal/server/config.go](../internal/server/config.go)
+- [internal/server/frontend.go](../internal/server/frontend.go)
+- [internal/server/frontend_test.go](../internal/server/frontend_test.go)
 - [internal/server/server.go](../internal/server/server.go)
 - [internal/server/server_test.go](../internal/server/server_test.go)
 - [internal/server/tls_test.go](../internal/server/tls_test.go)

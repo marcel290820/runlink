@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/url"
@@ -28,18 +29,30 @@ type Config struct {
 }
 
 func DefaultConfig() Config {
-	return Config{Role: "app", Listen: "127.0.0.1:8081", StateDir: "var/app", ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 30 * time.Second, ShutdownTimeout: 10 * time.Second}
+	return Config{
+		Role:              "app",
+		Listen:            "127.0.0.1:8081",
+		StateDir:          "var/app",
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       30 * time.Second,
+		ShutdownTimeout:   10 * time.Second,
+	}
 }
 
 func LoadConfig(path string) (Config, error) {
 	c := DefaultConfig()
 	f, err := os.Open(path)
 	if err != nil {
-		return c, errors.New("cannot open configuration")
+		return c, fmt.Errorf("cannot open configuration: %w", err)
 	}
 	defer f.Close()
 	data, err := io.ReadAll(io.LimitReader(f, 65537))
-	if err != nil || len(data) > 65536 {
+	if err != nil {
+		return c, fmt.Errorf("cannot read configuration: %w", err)
+	}
+	if len(data) > 65536 {
 		return c, errors.New("configuration exceeds the read limit")
 	}
 	if len(bytes.TrimSpace(data)) == 0 || bytes.TrimSpace(data)[0] != '{' {
@@ -48,7 +61,7 @@ func LoadConfig(path string) (Config, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&c); err != nil {
-		return c, errors.New("invalid configuration JSON")
+		return c, fmt.Errorf("invalid configuration JSON: %w", err)
 	}
 	if err := dec.Decode(new(any)); err != io.EOF {
 		return c, errors.New("configuration must contain one JSON object")

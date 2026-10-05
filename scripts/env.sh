@@ -3,6 +3,9 @@
 RUNLINK_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 RUNLINK_TOOLS=${RUNLINK_TOOLS:-$RUNLINK_ROOT/.tools}
 export RUNLINK_ROOT RUNLINK_TOOLS
+# Python runs bootstrap, so it cannot be pinned there; enforce the documented floor.
+python3 -c 'import sys; sys.exit(sys.version_info < (3, 12))' 2>/dev/null ||
+  { printf 'Python 3.12 or newer is required\n' >&2; exit 1; }
 export PATH="$RUNLINK_TOOLS/bin:$PATH"
 export GOENV=off GOTOOLCHAIN=local GOPATH="$RUNLINK_TOOLS/gopath" GOCACHE="$RUNLINK_TOOLS/gocache"
 export GOBIN="$RUNLINK_TOOLS/bin" npm_config_cache="$RUNLINK_TOOLS/npm-cache"

@@ -78,14 +78,14 @@ func run() int {
 	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 	listener, err := net.Listen("tcp", c.Listen)
 	if err != nil {
-		logger.Error("listen_failed")
+		logger.Error("listen_failed", "err", err)
 		return 1
 	}
 	defer listener.Close()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := server.Run(ctx, c, listener, logger); err != nil {
-		logger.Error("server_failed")
+		logger.Error("server_failed", "err", err)
 		return 1
 	}
 	return 0

@@ -51,10 +51,9 @@ def package(args):
                 run(['go', 'build', '-trimpath', '-buildvcs=false', '-ldflags',
                      f'-s -w -X runlink/internal/buildinfo.Version={args.version}',
                      '-o', str(stage/'bin'/command), f'./cmd/{command}'], cwd=ROOT, env=env)
-            shutil.copytree(ROOT/'internal/frontend/assets', stage/'web')
             (stage/'release.json').write_text(json.dumps({
                 'version': args.version, 'platform': target, 'revision': revision,
-                'dirty': dirty, 'assets': json.loads((stage/'web/manifest.json').read_text())
+                'dirty': dirty, 'assets': json.loads((ROOT/'internal/frontend/assets/manifest.json').read_text())
             }, sort_keys=True, indent=2)+'\n')
             archive = dest/f'runlink-{args.version}-{target}.tar.gz'
             with archive.open('wb') as output, gzip.GzipFile(fileobj=output, mode='wb', filename='', mtime=0) as gz:
@@ -115,7 +114,7 @@ def unpack(archive, target):
             path = Path(item.name)
             if not item.isfile() or path.is_absolute() or '..' in path.parts or item.name in seen:
                 raise ValueError('Unsafe archive member')
-            if item.name not in expected and (len(path.parts) != 2 or path.parts[0] != 'web'):
+            if item.name not in expected:
                 raise ValueError('Unexpected archive member')
             if not re.fullmatch(r'[a-zA-Z0-9_.\-/]+', item.name):
                 raise ValueError('Invalid archive path')
@@ -134,17 +133,6 @@ def unpack(archive, target):
     match = ARCHIVE.fullmatch(archive.name)
     if metadata['version'] != match[1] or metadata['platform'] != f'{match[2]}-{match[3]}':
         raise ValueError('Release metadata mismatch')
-    manifest = metadata['assets']
-    if json.loads((target/'web/manifest.json').read_text()) != manifest:
-        raise ValueError('Asset manifest mismatch')
-    if {file.name for file in (target/'web').iterdir()} != set(manifest)|{'manifest.json'}:
-        raise ValueError('Asset manifest coverage mismatch')
-    for name, record in manifest.items():
-        if not re.fullmatch(r'[a-zA-Z0-9_.-]+', name):
-            raise ValueError('Unsafe asset name')
-        data = (target/'web'/name).read_bytes()
-        if len(data) != record['size'] or hashlib.sha256(data).hexdigest() != record['sha256']:
-            raise ValueError('Embedded release asset mismatch')
     return metadata
 
 def smoke_url(url):

@@ -12,6 +12,7 @@ locals {
     for role in local.roles : role => {
       role        = role
       private_ip  = local.private_ips[role]
+      frontend_ip = local.private_ips.a
       app_ip      = local.private_ips.b
       domain      = var.domain
       turn_domain = var.turn_domain
