@@ -4,6 +4,4 @@ set -euo pipefail
 source "$(dirname "$0")/env.sh"
 cd "$RUNLINK_ROOT"
 mkdir -p build
-for command in runlink runlink-server; do
-  go build -trimpath -o "build/$command" "./cmd/$command"
-done
+go build -trimpath -o build/ ./cmd/...

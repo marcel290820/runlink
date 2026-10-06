@@ -143,6 +143,7 @@ Generated tools, caches, binaries, fixtures and archives are ignored.
 - [scripts/dev.sh](../scripts/dev.sh)
 - [scripts/docs-check.py](../scripts/docs-check.py)
 - [scripts/env.sh](../scripts/env.sh)
+- [scripts/harness.py](../scripts/harness.py)
 - [scripts/infra-check.py](../scripts/infra-check.py)
 - [scripts/lifecycle.py](../scripts/lifecycle.py)
 - [scripts/linux-libs.lock.json](../scripts/linux-libs.lock.json)
