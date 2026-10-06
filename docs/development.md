@@ -51,8 +51,9 @@ The file must contain one JSON object, at most 64 KiB, with only known fields.
 Roles are `app` and `frontend`; listeners require explicit IPs and valid ports.
 Plain HTTP and app listeners are restricted to loopback/private addresses. Public
 frontend listeners require both absolute `tls_cert` and `tls_key` paths. Port zero
-is available to Go tests. Frontend upstreams require a
-private/loopback IP, an explicit port, plain HTTP, and no credentials/path/query.
+selects a free port; tests use it. A frontend upstream must be exactly
+`http://IP:port` with a private or loopback IP, so it carries no credentials, path,
+query, or fragment.
 The frontend terminates public TLS on A using Go, with TLS 1.2 as the minimum.
 Invalid or missing certificate/key material prevents startup; HTTPS replies include
 HSTS. Certbot renewal copies restricted files and restarts the frontend. There is no environment-variable credential
@@ -66,7 +67,8 @@ Readiness does not claim that future registration or task protocols exist.
 HTTP bounds are fixed: 5 s header read, 10 s request read, 15 s response write,
 30 s idle, 10 s graceful shutdown, and 16 KiB request headers. SIGINT/SIGTERM drains
 requests and closes the listener; expiry of the shutdown deadline forces closure.
-Lifecycle logs contain fixed events and the role. Startup and serve failures include
+Lifecycle logs contain fixed events, the role, and the bound listen address, which
+`server_started` reports once the server is ready. Startup and serve failures include
 their cause for the operator. Request URLs, headers, bodies, recipient secrets, task
 data, and request-path errors are excluded.
 
@@ -85,8 +87,8 @@ the loader's generated approved SHA-256 list before creating executable content.
 Tests call the mount function directly; there is no production connection path yet.
 
 `assets.py` covers every asset in a deterministic manifest and embeds the GUI
-approval directly into one loader module. HTML uses SRI; the frontend computes a
-hash-based CSP from the embedded release. Trusted Types permits only the loader's
+approval directly into one loader module. HTML uses SRI; the frontend computes its
+hash-based CSP from the embedded page's inline script and the loader bytes. Trusted Types permits only the loader's
 verified GUI object URL; the CSP disables workers, framing, base URL changes, and
 other executable sources. The GUI uses `textContent` and safe DOM creation.
 

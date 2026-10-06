@@ -122,13 +122,14 @@ Generated tools, caches, binaries, fixtures and archives are ignored.
 - [internal/frontend/assets/manifest.json](../internal/frontend/assets/manifest.json)
 - [internal/frontend/assets/style.css](../internal/frontend/assets/style.css)
 - [internal/frontend/frontend.go](../internal/frontend/frontend.go)
+- [internal/frontend/frontend_test.go](../internal/frontend/frontend_test.go)
 - [internal/frontend/loader.template.mjs](../internal/frontend/loader.template.mjs)
 - [internal/server/config.go](../internal/server/config.go)
+- [internal/server/config_test.go](../internal/server/config_test.go)
 - [internal/server/frontend.go](../internal/server/frontend.go)
 - [internal/server/frontend_test.go](../internal/server/frontend_test.go)
 - [internal/server/server.go](../internal/server/server.go)
 - [internal/server/server_test.go](../internal/server/server_test.go)
-- [internal/server/tls_test.go](../internal/server/tls_test.go)
 
 ### Development, verification and release tools
 

@@ -1,4 +1,5 @@
-// Package frontend holds A's immutable public assets and their fixed routes.
+// Package frontend embeds A's immutable public assets. scripts/assets.py
+// generates index.html, loader.mjs, and manifest.json from the sources here.
 package frontend
 
 import (
@@ -10,8 +11,6 @@ import (
 )
 
 var (
-	//go:embed assets/capture.js
-	capture []byte
 	//go:embed assets/index.html
 	index []byte
 	//go:embed assets/loader.mjs
@@ -22,20 +21,18 @@ var (
 	manifest []byte
 )
 
-var taskPath = regexp.MustCompile(`^/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-
-// CSP admits only the inline capture script and the loader; trimming matches scripts/assets.py.
+// CSP admits exactly the page's inline capture script and the loader module. The
+// loader's verified GUI runs through 'strict-dynamic', and Trusted Types limits
+// script URLs to the loader's policy.
 var CSP = "default-src 'none'; " +
-	"script-src 'sha256-" + hash(bytes.TrimRight(capture, "\n")) + "' 'sha256-" + hash(loader) + "' 'strict-dynamic'; " +
+	"script-src " + scriptHash(inlineScript(index)) + " " + scriptHash(loader) + " 'strict-dynamic'; " +
 	"style-src 'self'; connect-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; worker-src 'none'; " +
 	"require-trusted-types-for 'script'; trusted-types runlink-gui"
 
-func hash(data []byte) string {
-	value := sha256.Sum256(data)
-	return base64.StdEncoding.EncodeToString(value[:])
-}
+var taskPath = regexp.MustCompile(`^/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
-// Asset returns the public file for a fixed path. Every other path stays closed.
+// Asset returns the file behind one of A's fixed public routes. Every other path
+// stays closed; the GUI bundle is never served here.
 func Asset(path string) (data []byte, contentType string, ok bool) {
 	switch {
 	case path == "/" || taskPath.MatchString(path):
@@ -48,4 +45,20 @@ func Asset(path string) (data []byte, contentType string, ok bool) {
 		return manifest, "application/json", true
 	}
 	return nil, "", false
+}
+
+func scriptHash(script []byte) string {
+	sum := sha256.Sum256(script)
+	return "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+}
+
+// inlineScript returns the body of the page's first plain <script> element, the
+// capture script, so the CSP hashes exactly the bytes the page contains.
+func inlineScript(page []byte) []byte {
+	_, rest, opened := bytes.Cut(page, []byte("<script>"))
+	script, _, closed := bytes.Cut(rest, []byte("</script>"))
+	if !opened || !closed {
+		panic("frontend: index.html lacks its inline capture script")
+	}
+	return script
 }
