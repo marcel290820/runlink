@@ -25,14 +25,28 @@ import (
 	"time"
 )
 
-// start runs Run on a loopback port and returns its address and an idempotent
-// stop that cancels Run and returns its result.
-func start(t *testing.T, c Config, logs io.Writer) (addr string, stop func() error) {
+// closeSignal closes closed when the server closes its listener, which is the
+// first thing Shutdown does. Watching it adds no connections Shutdown must wait for.
+type closeSignal struct {
+	net.Listener
+	once   sync.Once
+	closed chan struct{}
+}
+
+func (l *closeSignal) Close() error {
+	l.once.Do(func() { close(l.closed) })
+	return l.Listener.Close()
+}
+
+// start runs Run on a loopback port and returns its address, an idempotent stop
+// that cancels Run and returns its result, and a channel closed once shutdown begins.
+func start(t *testing.T, c Config, logs io.Writer) (addr string, stop func() error, closed <-chan struct{}) {
 	t.Helper()
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	inner, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
+	listener := &closeSignal{Listener: inner, closed: make(chan struct{})}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- Run(ctx, c, listener, slog.New(slog.NewJSONHandler(logs, nil))) }()
@@ -46,7 +60,7 @@ func start(t *testing.T, c Config, logs io.Writer) (addr string, stop func() err
 		}
 	})
 	t.Cleanup(func() { _ = stop() })
-	return listener.Addr().String(), stop
+	return listener.Addr().String(), stop, listener.closed
 }
 
 func appConfig(t *testing.T) Config {
@@ -67,19 +81,6 @@ func get(t *testing.T, client *http.Client, url string) (int, string) {
 		t.Fatal(err)
 	}
 	return res.StatusCode, string(body)
-}
-
-// waitUntilClosed returns once addr refuses connections, which is how Shutdown begins.
-func waitUntilClosed(t *testing.T, addr string) {
-	t.Helper()
-	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(time.Millisecond) {
-		conn, err := net.Dial("tcp", addr)
-		if err != nil {
-			return
-		}
-		conn.Close()
-	}
-	t.Fatal("listener still accepting connections")
 }
 
 func TestHandlerRoutesAndControls(t *testing.T) {
@@ -132,7 +133,7 @@ func TestHandlerRoutesAndControls(t *testing.T) {
 func TestRunServesThenStopsWithPrivateLogs(t *testing.T) {
 	c := appConfig(t)
 	var logs bytes.Buffer
-	addr, stop := start(t, c, &logs)
+	addr, stop, _ := start(t, c, &logs)
 	client := &http.Client{Timeout: time.Second}
 	if code, body := get(t, client, "http://"+addr+"/healthz?recipient-secret=do-not-log"); code != 200 || body != "{\"status\":\"ok\"}\n" {
 		t.Fatal(code, body)
@@ -178,7 +179,7 @@ func TestRunRejectsSharedStateDirectory(t *testing.T) {
 func TestHeaderTimeoutClosesIncompleteRequest(t *testing.T) {
 	c := appConfig(t)
 	c.ReadHeaderTimeout = 40 * time.Millisecond
-	addr, stop := start(t, c, io.Discard)
+	addr, stop, _ := start(t, c, io.Discard)
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		t.Fatal(err)
@@ -202,7 +203,7 @@ func TestHeaderTimeoutClosesIncompleteRequest(t *testing.T) {
 
 // startBlockedStatus serves a frontend whose upstream holds every status request
 // until release closes or the request is cancelled. entered closes on arrival.
-func startBlockedStatus(t *testing.T, shutdownTimeout time.Duration) (addr string, stop func() error, entered, release chan struct{}) {
+func startBlockedStatus(t *testing.T, shutdownTimeout time.Duration) (addr string, stop func() error, closed <-chan struct{}, entered, release chan struct{}) {
 	t.Helper()
 	entered, release = make(chan struct{}), make(chan struct{})
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -216,8 +217,8 @@ func startBlockedStatus(t *testing.T, shutdownTimeout time.Duration) (addr strin
 	t.Cleanup(upstream.Close)
 	c := frontendConfig(upstream.URL)
 	c.ShutdownTimeout = shutdownTimeout
-	addr, stop = start(t, c, io.Discard)
-	return addr, stop, entered, release
+	addr, stop, closed = start(t, c, io.Discard)
+	return addr, stop, closed, entered, release
 }
 
 func requestStatus(addr string) <-chan error {
@@ -237,12 +238,13 @@ func requestStatus(addr string) <-chan error {
 }
 
 func TestShutdownDrainsInFlightRequest(t *testing.T) {
-	addr, stop, entered, release := startBlockedStatus(t, time.Second)
+	// A generous deadline: Shutdown re-checks connections with a backoff of up to 500 ms.
+	addr, stop, closed, entered, release := startBlockedStatus(t, 10*time.Second)
 	result := requestStatus(addr)
 	<-entered
 	stopped := make(chan error, 1)
 	go func() { stopped <- stop() }()
-	waitUntilClosed(t, addr)
+	<-closed
 	close(release)
 	if err := <-stopped; err != nil {
 		t.Fatal(err)
@@ -253,7 +255,7 @@ func TestShutdownDrainsInFlightRequest(t *testing.T) {
 }
 
 func TestShutdownDeadlineForcesClose(t *testing.T) {
-	addr, stop, entered, _ := startBlockedStatus(t, 100*time.Millisecond)
+	addr, stop, _, entered, _ := startBlockedStatus(t, 100*time.Millisecond)
 	result := requestStatus(addr)
 	<-entered
 	began := time.Now()
@@ -315,7 +317,7 @@ func TestFrontendTLS(t *testing.T) {
 	c := frontendConfig("http://127.0.0.1:1") // nothing listens there
 	var roots *x509.CertPool
 	c.TLSCert, c.TLSKey, roots = writeCertificate(t, t.TempDir())
-	addr, stop := start(t, c, io.Discard)
+	addr, stop, _ := start(t, c, io.Discard)
 	transport := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots}}
 	client := &http.Client{Transport: transport, Timeout: time.Second}
 
