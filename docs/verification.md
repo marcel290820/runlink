@@ -93,6 +93,7 @@ Generated tools, caches, binaries, fixtures and archives are ignored.
 
 ### Repository and documentation
 
+- [.claude/check.sh](../.claude/check.sh)
 - [.gitignore](../.gitignore)
 - [AGENTS.md](../AGENTS.md)
 - [README.md](../README.md)

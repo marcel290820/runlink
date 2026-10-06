@@ -19,6 +19,7 @@ without installing host packages. The host Python/OpenSSL/C compiler are prerequ
 | `scripts/build.sh` | Build both executables into `build/` |
 | `scripts/dev.sh` | Build and run the app and trusted frontend on loopback; stop both on exit |
 | `scripts/check.sh` | Shared local/CI gate described below |
+| `.claude/check.sh` | The same gate, where agent stop and commit hooks look for it |
 | `python3 scripts/assets.py` | Regenerate loader approvals, HTML, and asset manifest |
 | `python3 scripts/assets.py --check` | Reject stale generated assets without rewriting them |
 | `scripts/release.sh --help` | Packaging, signing, verification, local deployment, smoke, rollback |
