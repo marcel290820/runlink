@@ -13,12 +13,26 @@ was exercised there: both readiness endpoints, frontend-to-app ingress, private 
 and cleanup of both children after SIGTERM passed. After the move to the Ubuntu 26.04
 baseline, a clean copy bootstrapped from empty caches and passed the gate in an
 `ubuntu:26.04` container, including cloud-init schema and systemd unit validation;
-Chrome's base libraries were installed there as hosted runners provide them. Its checks cover:
+Chrome's base libraries were installed there as hosted runners provide them.
+
+The foundation was later rewritten for readability in a separate worktree, keeping
+its behavior. On Ubuntu 24.04 amd64 the rewrite passed the gate with the existing
+workspace tools, and again after bootstrapping into an empty tools directory, where
+nft and coturn report unavailable because the Ubuntu 26.04 libraries are not
+extracted on that host. Against the previous implementation, the generated browser
+assets and the rendered `build/infra` files are byte-identical, and 114 HTTP requests
+across both roles, every fixed route, unsupported methods, and worker/upgrade headers
+returned identical status, headers, and bodies. `scripts/dev.sh` served both roles
+and stopped both children on SIGTERM and when one child exited. A counterpart review
+found regressions that were fixed with checks that fail without the fix: IPv6 zones
+smuggling URL syntax into the upstream, waiting for the body of a rejected upstream
+status, smoke accepting non-200 success, and blocking on a FIFO in a release.
+The gate's checks cover:
 
 | Area | Evidence |
 | --- | --- |
 | Go foundation | Formatting, vet, compilation, both executable builds, race-enabled tests |
-| Runtime | Actual help/version/error commands, private writable-state setup, health/readiness, SIGTERM listener closure, header timeout, request drain and bounded forced shutdown; native HTTPS/HSTS with temporary certificates, obsolete TLS rejection and missing-material fail-closed behavior |
+| Runtime | Actual help/version/error commands, config-file overrides, private writable-state setup and shared-directory rejection, health/readiness, frontend-to-app status relay between the built binaries, SIGTERM listener closure, header timeout, request drain and bounded forced shutdown; native HTTPS/HSTS with temporary certificates, obsolete TLS rejection and missing-material fail-closed behavior |
 | Browser assets | Deterministic regeneration check, complete asset manifest, Chromium fragment/history cleanup, empty browser storage, reload and separate-secret entry, password field clearing, approved GUI execution and modified-GUI rejection |
 | Ingress | Malicious HTML/SVG/JS, redirects, unexpected statuses, oversize/error bodies, hostile MIME/CSP/cookie/worker headers, fixed routing, no credential-header forwarding, worker/upgrade rejection, actual browser API navigation/worker isolation |
 | CI | YAML parsing, actionlint, immutable action references, Linux/macOS hosted matrix, read-only permissions, short retention, shared gate invocation |
@@ -86,10 +100,10 @@ transport/authentication, registry, task execution, browser recovery, and indepe
 supervision are intentionally absent; their acceptance criteria remain in the
 [implementation plan](../architecture/implementation.md#required-proofs).
 
-## Changed source files
+## Source files
 
-3 existing documents updated and 57 new source/configuration files added.
-Generated tools, caches, binaries, fixtures and archives are ignored.
+The foundation consists of these files. Generated tools, caches, binaries, fixtures
+and archives are ignored.
 
 ### Repository and documentation
 
@@ -123,6 +137,7 @@ Generated tools, caches, binaries, fixtures and archives are ignored.
 - [internal/frontend/assets/style.css](../internal/frontend/assets/style.css)
 - [internal/frontend/frontend.go](../internal/frontend/frontend.go)
 - [internal/frontend/frontend_test.go](../internal/frontend/frontend_test.go)
+- [internal/frontend/index.template.html](../internal/frontend/index.template.html)
 - [internal/frontend/loader.template.mjs](../internal/frontend/loader.template.mjs)
 - [internal/server/config.go](../internal/server/config.go)
 - [internal/server/config_test.go](../internal/server/config_test.go)
@@ -170,4 +185,5 @@ Generated tools, caches, binaries, fixtures and archives are ignored.
 
 ### CI
 
+- [.github/actionlint.yaml](../.github/actionlint.yaml)
 - [.github/workflows/check.yml](../.github/workflows/check.yml)

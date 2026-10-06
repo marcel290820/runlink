@@ -1,22 +1,32 @@
 #!/usr/bin/env python3
-"""Reject broken local Markdown links and anchors."""
+"""Reject broken local Markdown links and heading anchors."""
 from pathlib import Path
 import re
 from urllib.parse import unquote, urlsplit
 
-root=Path(__file__).resolve().parents[1]
-files=[root/'README.md',root/'AGENTS.md',root/'VISION.md',root/'RATIONALE.md',
-       *sorted((root/'architecture').rglob('*.md')),*sorted((root/'docs').rglob('*.md'))]
-checked=0
-for file in files:
-    for link in re.findall(r'\[[^\]]*\]\(([^\s)]+)\)',file.read_text()):
-        parsed=urlsplit(link)
-        if parsed.scheme or parsed.netloc:continue
-        target=(file.parent/unquote(parsed.path)).resolve() if parsed.path else file
-        if not target.is_file():raise SystemExit(f'Broken link in {file.relative_to(root)}: {link}')
-        if parsed.fragment and target.suffix=='.md':
-            headings=re.findall(r'^#+\s+(.+)$',target.read_text(),flags=re.M)
-            anchors={re.sub(r'[^\w -]','',heading.lower()).replace(' ','-') for heading in headings}
-            if parsed.fragment not in anchors:raise SystemExit(f'Broken anchor in {file.relative_to(root)}: {link}')
-        checked+=1
+ROOT = Path(__file__).resolve().parents[1]
+DOCUMENTS = [ROOT / name for name in ('README.md', 'AGENTS.md', 'VISION.md', 'RATIONALE.md')] + \
+    sorted((ROOT / 'architecture').rglob('*.md')) + sorted((ROOT / 'docs').rglob('*.md'))
+LINK = re.compile(r'\[[^\]]*\]\(([^\s)]+)\)')
+HEADING = re.compile(r'^#+\s+(.+)$', re.MULTILINE)
+
+
+def anchors(document):
+    """GitHub's heading slugs: lowercase, punctuation dropped, spaces to hyphens."""
+    return {re.sub(r'[^\w -]', '', heading.lower()).replace(' ', '-')
+            for heading in HEADING.findall(document.read_text())}
+
+
+checked = 0
+for document in DOCUMENTS:
+    for link in LINK.findall(document.read_text()):
+        parts = urlsplit(link)
+        if parts.scheme or parts.netloc:
+            continue
+        target = (document.parent / unquote(parts.path)).resolve() if parts.path else document
+        if not target.is_file():
+            raise SystemExit(f'Broken link in {document.relative_to(ROOT)}: {link}')
+        if parts.fragment and target.suffix == '.md' and parts.fragment not in anchors(target):
+            raise SystemExit(f'Broken anchor in {document.relative_to(ROOT)}: {link}')
+        checked += 1
 print(f'Documentation: {checked} local links and anchors passed')

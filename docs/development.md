@@ -86,9 +86,10 @@ persists those values. The GUI mount function verifies the complete bytes agains
 the loader's generated approved SHA-256 list before creating executable content.
 Tests call the mount function directly; there is no production connection path yet.
 
-`assets.py` covers every asset in a deterministic manifest and embeds the GUI
-approval directly into one loader module. HTML uses SRI; the frontend computes its
-hash-based CSP from the embedded page's inline script and the loader bytes. Trusted Types permits only the loader's
+`assets.py` fills `internal/frontend/loader.template.mjs` with the GUI approval
+and `internal/frontend/index.template.html` with the inline capture script and SRI
+hashes, then covers every asset in a deterministic manifest. The frontend computes
+its hash-based CSP from the embedded page's inline script and the loader bytes. Trusted Types permits only the loader's
 verified GUI object URL; the CSP disables workers, framing, base URL changes, and
 other executable sources. The GUI uses `textContent` and safe DOM creation.
 
@@ -103,7 +104,8 @@ remain closed. WSS must receive its own boundary checks when implemented.
 The same `scripts/check.sh` runs locally and on standard `ubuntu-26.04` and
 `macos-26` hosted runners. It checks generated assets, Go formatting, shell lint,
 JavaScript/Python syntax, workflow YAML/action pins, Go vet, race-enabled behavioral
-tests, both builds, actual CLI/SIGTERM behavior, Chromium browser behavior,
+tests, both builds, actual CLI behavior, config-file overrides, frontend-to-app
+relay and SIGTERM shutdown, Chromium browser behavior,
 OpenTofu and rendered configuration, loopback coturn UDP/TCP/TLS, local release lifecycle, Go vulnerabilities,
 Node advisories, and whitespace.
 

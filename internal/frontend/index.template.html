@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<script>{{CAPTURE}}</script>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Runlink</title>
+<link rel="stylesheet" href="/assets/style.css" integrity="{{STYLE_INTEGRITY}}">
+<script type="module" src="/assets/loader.mjs" integrity="{{LOADER_INTEGRITY}}"></script>
+</head>
+<body>
+<main>
+<h1>Runlink</h1>
+<p>Run a shared task on its owner's machine.</p>
+<p id="status" role="status">Preparing your link…</p>
+<form id="secret-form">
+<label for="secret">Link secret</label>
+<input id="secret" type="password" autocomplete="off" maxlength="256" required>
+<button type="submit">Continue</button>
+</form>
+<p class="note">A secret-bearing link may remain in browser history or synchronization.
+Receive the secret separately to keep it out of the URL. Reloading requires the original link or secret.</p>
+<section id="task" aria-live="polite"></section>
+</main>
+</body>
+</html>
