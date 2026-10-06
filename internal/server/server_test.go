@@ -317,7 +317,6 @@ func TestFrontendTLS(t *testing.T) {
 	c.TLSCert, c.TLSKey, roots = writeCertificate(t, t.TempDir())
 	addr, stop := start(t, c, io.Discard)
 	transport := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots}}
-	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: time.Second}
 
 	for path, want := range map[string]int{"/healthz": 200, "/readyz": 200, "/": 200, "/api/v1/status": 502} {
@@ -325,6 +324,7 @@ func TestFrontendTLS(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		_, _ = io.Copy(io.Discard, res.Body)
 		res.Body.Close()
 		if res.StatusCode != want || res.TLS == nil || res.TLS.Version < tls.VersionTLS12 {
 			t.Fatalf("%s: status %d over %v", path, res.StatusCode, res.TLS)
@@ -343,6 +343,9 @@ func TestFrontendTLS(t *testing.T) {
 		conn.Close()
 		t.Fatal("obsolete TLS version accepted")
 	}
+	// Shutdown waits up to 5 s for connections that never sent a request, and the
+	// client may hold one in its pool, so release them first.
+	transport.CloseIdleConnections()
 	if err := stop(); err != nil {
 		t.Fatal(err)
 	}
