@@ -1,15 +1,10 @@
 {
   "go_install": {
+    "actionlint": "github.com/rhysd/actionlint/cmd/actionlint@v1.7.12",
     "govulncheck": "golang.org/x/vuln/cmd/govulncheck@v1.8.0"
   },
   "platforms": {
     "darwin_amd64": {
-      "actionlint": {
-        "binary": "actionlint",
-        "sha256": "5b44c3bc2255115c9b69e30efc0fecdf498fdb63c5d58e17084fd5f16324c644",
-        "url": "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_darwin_amd64.tar.gz",
-        "version": "1.7.12"
-      },
       "go": {
         "binary": "go/bin/go",
         "sha256": "8f8f52c6649542cf027bbc9b9c68d1ec042f9f34808a40413f0b8b3f66f3caa4",
@@ -36,12 +31,6 @@
       }
     },
     "darwin_arm64": {
-      "actionlint": {
-        "binary": "actionlint",
-        "sha256": "aba9ced2dee8d27fecca3dc7feb1a7f9a52caefa1eb46f3271ea66b6e0e6953f",
-        "url": "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_darwin_arm64.tar.gz",
-        "version": "1.7.12"
-      },
       "go": {
         "binary": "go/bin/go",
         "sha256": "ee215d57e0ec269c60cc9ceca68e6bda321ba9ee5afe24f4b0988703c2d87d12",
@@ -68,12 +57,6 @@
       }
     },
     "linux_amd64": {
-      "actionlint": {
-        "binary": "actionlint",
-        "sha256": "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8",
-        "url": "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz",
-        "version": "1.7.12"
-      },
       "go": {
         "binary": "go/bin/go",
         "sha256": "63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445",
@@ -100,12 +83,6 @@
       }
     },
     "linux_arm64": {
-      "actionlint": {
-        "binary": "actionlint",
-        "sha256": "325e971b6ba9bfa504672e29be93c24981eeb1c07576d730e9f7c8805afff0c6",
-        "url": "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_arm64.tar.gz",
-        "version": "1.7.12"
-      },
       "go": {
         "binary": "go/bin/go",
         "sha256": "3450b45a3f9ee8568792736a5c5e70a1f2e9b36c35a8f74958c03e51d7d92bec",
@@ -130,6 +107,24 @@
         "url": "https://github.com/opentofu/opentofu/releases/download/v1.13.1/tofu_1.13.1_linux_arm64.tar.gz",
         "version": "1.13.1"
       }
+    }
+  },
+  "playwright": {
+    "darwin_amd64": {
+      "builds/cft/153.0.8010.12/mac-x64/chrome-headless-shell-mac-x64.zip": "5c2eaa1aad62111bb5a70dd0889dd3093f3142277b8f78957a238257ee85f009",
+      "builds/ffmpeg/1011/ffmpeg-mac.zip": "17ed15a2fa60d3c74181befcb2bdf7c9bb288d19b2a3b9893b94b63f2ce260e4"
+    },
+    "darwin_arm64": {
+      "builds/cft/153.0.8010.12/mac-arm64/chrome-headless-shell-mac-arm64.zip": "89d80a6d26ccd0ccfd51e22d9e1297283862af2b0cd91dce07459b35ca0059f2",
+      "builds/ffmpeg/1011/ffmpeg-mac-arm64.zip": "7d77eb0d44b59acc4065faa2476c0df1a242cc904c346f820626818c953c5277"
+    },
+    "linux_amd64": {
+      "builds/cft/153.0.8010.12/linux64/chrome-headless-shell-linux64.zip": "a9da028861a0cf789ff25c2fed45f5f1aaf969ed9247835b6a7821a4f7af9d1d",
+      "builds/ffmpeg/1011/ffmpeg-linux.zip": "ebc74fc5b94830176a3c2914ae96bd8bc7f6a91f4f33890230f84a172ee61ccc"
+    },
+    "linux_arm64": {
+      "builds/cft/153.0.8010.12/linux-arm64/chrome-headless-shell-linux-arm64.zip": "d433c45172c7836e38124fe545f767b02210bfb43a6262f08a297473a8e91c99",
+      "builds/ffmpeg/1011/ffmpeg-linux-arm64.zip": "2628c03f05318ff812c8c9baaf207dea2ddf53e818c0dc936714b0fbe3afb009"
     }
   }
 }

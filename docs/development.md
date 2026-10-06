@@ -3,10 +3,12 @@
 ## Bootstrap and commands
 
 `scripts/bootstrap.sh` installs checksum-pinned Go 1.27.1, Node 24.21.0, OpenTofu
-1.13.1, ShellCheck 0.11.0, and actionlint 1.7.12. Go installs
-`govulncheck` 1.8.0 with module checksum verification. Versions and archive checksums
+1.13.1, and ShellCheck 0.11.0. Go builds `govulncheck` 1.8.0 and actionlint 1.7.12
+from source, verified against the Go checksum database. Versions and archive checksums
 live in [tools.lock.json](../scripts/tools.lock.json). `npm ci` uses the checked-in
-lockfile for Playwright 1.63.0 and YAML 2.9.1. Playwright pins its Chromium revision.
+lockfile for Playwright 1.63.0 and YAML 2.9.1. Playwright downloads Chromium's headless
+shell and ffmpeg through a loopback mirror in bootstrap that serves only files matching
+the checksums in `tools.lock.json`; an unpinned or mismatched download fails bootstrap.
 Ubuntu 26.04 amd64 validator/browser libraries are checksum-pinned in
 [linux-libs.lock.json](../scripts/linux-libs.lock.json), downloaded and extracted
 without installing host packages. The host Python/OpenSSL/C compiler are prerequisites.

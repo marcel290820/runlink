@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Install checksum-pinned tools without changing the host."""
 import hashlib
+import http.server
 import json
 import os
 from pathlib import Path
 import platform
+import shutil
 import subprocess
 import tarfile
 import tempfile
+import threading
 import urllib.request
 
 root = Path(__file__).resolve().parents[1]
@@ -83,5 +86,39 @@ env.update(PATH=str(tools/'bin')+os.pathsep+env['PATH'], GOTOOLCHAIN='local',
 for module in lock['go_install'].values():
     subprocess.run(['go', 'install', module], env=env, check=True)
 subprocess.run(['npm', 'ci', '--ignore-scripts', '--no-fund', '--no-audit'], cwd=root, env=env, check=True)
-subprocess.run(['node', 'node_modules/playwright/cli.js', 'install', '--only-shell', 'chromium'], cwd=root, env=env, check=True)
+
+
+class PinnedPlaywrightMirror(http.server.BaseHTTPRequestHandler):
+    """Loopback mirror that hands Playwright only checksum-pinned downloads."""
+
+    def do_GET(self):
+        digest = lock['playwright'][key].get(self.path.lstrip('/'))
+        if digest is None:
+            self.send_error(404, 'Unpinned Playwright download; update scripts/tools.lock.json')
+            return
+        with tempfile.TemporaryFile(dir=tools) as file:
+            with urllib.request.urlopen('https://cdn.playwright.dev' + self.path, timeout=60) as response:
+                shutil.copyfileobj(response, file)
+            file.seek(0)
+            if hashlib.file_digest(file, 'sha256').hexdigest() != digest:
+                self.send_error(502, 'Playwright download checksum mismatch')
+                return
+            self.send_response(200)
+            self.send_header('Content-Length', str(file.tell()))
+            self.end_headers()
+            file.seek(0)
+            shutil.copyfileobj(file, self.wfile)
+
+    def log_message(self, *args):
+        pass
+
+
+mirror = http.server.ThreadingHTTPServer(('127.0.0.1', 0), PinnedPlaywrightMirror)
+threading.Thread(target=mirror.serve_forever, daemon=True).start()
+env['PLAYWRIGHT_DOWNLOAD_HOST'] = f'http://127.0.0.1:{mirror.server_port}'
+try:
+    subprocess.run(['node', 'node_modules/playwright/cli.js', 'install', '--only-shell', 'chromium'],
+                   cwd=root, env=env, check=True)
+finally:
+    mirror.shutdown()
 print(f'Tools installed in {tools}; run scripts/check.sh')

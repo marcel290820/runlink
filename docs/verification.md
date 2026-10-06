@@ -22,11 +22,34 @@ Chrome's base libraries were installed there as hosted runners provide them. Its
 | Browser assets | Deterministic regeneration check, complete asset manifest, Chromium fragment/history cleanup, empty browser storage, reload and separate-secret entry, password field clearing, approved GUI execution and modified-GUI rejection |
 | Ingress | Malicious HTML/SVG/JS, redirects, unexpected statuses, oversize/error bodies, hostile MIME/CSP/cookie/worker headers, fixed routing, no credential-header forwarding, worker/upgrade rejection, actual browser API navigation/worker isolation |
 | CI | YAML parsing, actionlint, immutable action references, Linux/macOS hosted matrix, read-only permissions, short retention, shared gate invocation |
-| Infrastructure | OpenTofu format/validate, pinned provider initialization and four-platform checksum lock; mocked three-server apply and unrestricted-SSH rejection; actual cloud-init schema validation, shell syntax/lint, systemd unit validation in a temporary root |
+| Infrastructure | OpenTofu format/validate, pinned provider initialization and a signed 13-platform checksum lock; mocked three-server apply and unrestricted-SSH rejection; actual cloud-init schema validation, shell syntax/lint, systemd unit validation in a temporary root |
 | TURN fixture | Pinned coturn 4.6.1 parses production option/deny-list syntax with fixture addresses, temporary TLS/REST credentials; exact startup-helper private-file generation and invalid-secret rejection; paced same-server loopback relay over UDP, TCP and TLS |
 | Releases | Deterministic archives; temporary RSA signatures, checksum/signature failures, unsigned extras, traversal rejection, packaged binary smoke, immutable update, explicit rollback, modified installed-version rejection and automatic link restoration after smoke failure; requested restart/stop behavior using a temporary systemctl stub |
 | Dependencies | `govulncheck` source scan and `npm audit --audit-level=high` against public advisory databases |
 | Documentation | Local link/anchor and whitespace checks |
+
+### Pin provenance
+
+Reviewed on 2026-10-06 against upstream signatures, with each signing key confirmed
+through a second, independent source:
+
+| Pin | Proof |
+| --- | --- |
+| Go 1.27.1 | Each archive's GPG signature verifies with a subkey of Google's Linux packages key `EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796`, as published on google.com/linuxrepositories |
+| Node 24.21.0 | `SHASUMS256.txt` is signed by `5BE8A3F6C8A5C01D106C0AD820B1A390B168D356`, an active releaser in the nodejs/node README; locked hashes match |
+| OpenTofu 1.13.1 | `SHA256SUMS` GPG signature by `E3E6E43D84CB852EADB0051D0C0AF313E5FD9F80` (also in opentofu/opentofu docs and keys.openpgp.org); Sigstore certificate for `opentofu/opentofu` `release.yml@refs/heads/v1.13` chains to the Fulcio root, verifies the file and matches Rekor entry 3037839244 |
+| hcloud provider 1.70.0 | `SHA256SUMS` signed by `1454BE0E275F52F52467BBF65219EACB3A77198B`, the key both the OpenTofu and Terraform registries list; all 13 `zh:` and `h1:` lock hashes recomputed from the signed zips |
+| govulncheck 1.8.0, actionlint 1.7.12 | Built from source; Go checksum database lookups |
+| Playwright 1.63.0, YAML 2.9.1 | npm registry signatures for all packages; Playwright provenance attests a GitHub-hosted build from `microsoft/playwright` tag `v1.63.0` |
+| GitHub Actions | Pinned SHAs are the `v7.0.1` tag commits in the official repositories; GitHub-verified commits |
+| Ubuntu 26.04 libraries | `InRelease` signatures by the Ubuntu Archive Automatic Signing Key (2018) `F6ECB3762474EDA9D21B7022871920D1991BC93C`; all 34 hashes match the signed package indexes |
+| Chromium headless shell 153.0.8010.12 | Playwright CDN bytes identical to Google's Chrome for Testing bucket on all four platforms |
+
+Upstream publishes no signature for two pins. ShellCheck 0.11.0 has no signatures or
+attestations; the pinned `.tar.gz` files were uploaded by the maintainer on 2026-01-05
+and contain binaries identical to the CI-uploaded `.tar.xz` release assets.
+Playwright's ffmpeg 1011 exists only on Microsoft's CDN, so its pin is trust on first
+use; the tests do not record video, so it never runs.
 
 Generated infrastructure fixtures use documentation addresses and public test SSH
 keys. The coturn fixture changes listeners to loopback, uses test ports and a
