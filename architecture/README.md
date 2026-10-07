@@ -23,6 +23,7 @@ Decisions live in `adr/NNNN-short-title.md`, using Status, Context, Decision, an
 | [0005](adr/0005-run-recovery-and-supervision.md) | Durable run recovery and crash-surviving supervision | Accepted |
 | [0006](adr/0006-hetzner-deployment.md) | Separate frontend, application, and TURN servers on Hetzner | Accepted |
 | [0007](adr/0007-local-shipping-foundation.md) | Locally verified tooling, trusted ingress, and signed deployment foundation | Accepted |
+| [0008](adr/0008-local-first-proof-of-concept.md) | Local-first proof of concept with infrastructure stand-ins | Accepted |
 
 ## Container view
 
@@ -50,6 +51,8 @@ flowchart TB
     runner -->|Supervised fixed command and validated input| script
     script -->|Selected output| runner
 ```
+
+For development and the proof of concept, every container runs on one machine, with a TURN stand-in for coturn ([ADR 0008](adr/0008-local-first-proof-of-concept.md)).
 
 The owner serves the full GUI and executes tasks. The static loader connects the browser and verifies the GUI. WebRTC payload encryption terminates in browser and runner; HTTPS/WSS carries coordination. Direct connections avoid server payload bandwidth; TURN fallback incurs it.
 

@@ -8,7 +8,7 @@ Runlink has a development and shipping scaffold; product task protocols remain p
 - `architecture/adr/`: numbered architecture decision records (ADRs).
 - `architecture/implementation.md`: build sequence, required proofs, and unresolved choices.
 
-The Go layout is `cmd/runlink`, `cmd/runlink-server`, and shared `internal/` packages. Browser assets live in `internal/frontend/assets` as HTML, CSS, and vanilla JavaScript. `scripts/` owns the shared gate and release tooling; `infra/` contains OpenTofu, mocked tests, and cloud-init templates. `docs/` records actual development commands, operational steps, and verification limits.
+The Go layout is `cmd/runlink`, `cmd/runlink-server`, the development-only `cmd/runlink-dev`, and shared `internal/` packages; `internal/devstack` runs the local stack (ADR 0008). Browser assets live in `internal/frontend/assets` as HTML, CSS, and vanilla JavaScript. `scripts/` owns the shared gate and release tooling; `infra/` contains OpenTofu, mocked tests, and cloud-init templates. `docs/` records actual development commands, operational steps, and verification limits.
 
 ## Build, Test, and Development Commands
 

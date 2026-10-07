@@ -17,7 +17,7 @@ without installing host packages. The host Python/OpenSSL/C compiler are prerequ
 | --- | --- |
 | `scripts/bootstrap.sh` | Install workspace tools and headless Chromium; no host service changes |
 | `scripts/build.sh` | Build both executables into `build/` |
-| `scripts/dev.sh` | Build and run the app and trusted frontend on loopback; stop both on exit |
+| `scripts/dev.sh` | Regenerate assets, build, and run the [local stack](#local-stack) until Ctrl-C |
 | `scripts/check.sh` | Shared local/CI gate described below |
 | `.claude/check.sh` | The same gate, where agent stop and commit hooks look for it |
 | `python3 scripts/assets.py` | Regenerate loader approvals, HTML, and asset manifest |
@@ -28,6 +28,60 @@ Downloads need network access, but application tests run only against loopback.
 Infrastructure initialization downloads a checksum-locked provider. Tests use a
 mocked provider and never call the cloud API. Vulnerability scans query public
 advisory databases and fail on applicable findings or scan failures.
+
+## Local stack
+
+`scripts/dev.sh` runs the whole product on loopback, as decided in
+[ADR 0008](../architecture/adr/0008-local-first-proof-of-concept.md). It
+regenerates the browser assets, builds, and starts `build/runlink-dev`. A and B
+are the production server roles; only infrastructure is replaced.
+
+| Server | Local address | Runs |
+| --- | --- | --- |
+| A frontend | `http://127.0.0.1:8080` | `runlink-server` frontend role: loader, CSP, fixed routes, ingress to B |
+| B app | `http://127.0.0.1:8081` | `runlink-server` app role with state in `var/dev/app` |
+| C turn | `127.0.0.1:3478`, UDP and TCP | Pion TURN stand-in for coturn, relays on `127.0.0.1` ports 49160-49259 |
+
+The ADR lists what each stand-in replaces and what is not exercised locally. The
+stack reports ready once every listener is bound and A and B answer `/readyz`,
+then prints its addresses and ICE URIs. Ctrl-C or SIGTERM drains A and B and stops
+the TURN server, closing its TCP clients and waiting until every relay port is
+released. If any service fails, TURN included, all stop and `runlink-dev` exits
+non-zero with the cause. Logs are JSON on stderr, tagged with `service`; the `stack_ready`
+event lists the addresses for scripts. TURN rejections are logged with the
+username and reason, never a password or the secret.
+
+`var/dev` keeps B's state and the TURN shared secret `turn-secret` across
+restarts: 64 lowercase hex characters, mode `0600`, generated on first start and
+validated as C validates it. The directory must be private (`0700`) and the secret
+a regular file. Delete `var/dev` to start fresh. `--frontend`,
+`--app`, `--turn`, and `--state-dir` move the stack; addresses must be loopback,
+TURN's IPv4 because Pion relays IPv4 only, and port 0 picks a free port.
+
+Development builds of the owner CLI target `http://127.0.0.1:8080`; release
+builds stamp `https://runlink.dev`. `RUNLINK_SERVICE` overrides either, with plain
+HTTP accepted only for a loopback IP. `build/runlink status` checks the status
+route through A.
+
+The stand-in accepts coturn's TURN REST credentials, as B will issue them. For
+manual tests, mint one and force the relay path with
+`iceTransportPolicy: 'relay'` and the ICE server
+`{ urls: 'turn:127.0.0.1:3478?transport=udp', username, credential }`:
+
+```bash
+username="$(($(date +%s) + 600)):manual"
+credential=$(printf %s "$username" | openssl dgst -sha1 -hmac "$(cat var/dev/turn-secret)" -binary | base64)
+```
+
+Go end-to-end tests start a stack in-process on free ports, as
+`cmd/runlink/main_test.go` does; browser tests start `build/runlink-dev` and read
+`stack_ready`, as `scripts/stack.test.mjs` does.
+
+```go
+stack, err := devstack.Start(t.Context(), devstack.Config{
+	Frontend: "127.0.0.1:0", App: "127.0.0.1:0", TURN: "127.0.0.1:0", StateDir: t.TempDir(),
+}, slog.New(slog.DiscardHandler))
+```
 
 ## Configuration and runtime
 
@@ -105,7 +159,8 @@ The same `scripts/check.sh` runs locally and on standard `ubuntu-26.04` and
 `macos-26` hosted runners. It checks generated assets, Go formatting, shell lint,
 JavaScript/Python syntax, workflow YAML/action pins, Go vet, race-enabled behavioral
 tests, both builds, actual CLI behavior, config-file overrides, frontend-to-app
-relay and SIGTERM shutdown, Chromium browser behavior,
+relay and SIGTERM shutdown, the local stack and Chromium WebRTC through its TURN
+stand-in, Chromium browser behavior,
 OpenTofu and rendered configuration, loopback coturn UDP/TCP/TLS, local release lifecycle, Go vulnerabilities,
 Node advisories, and whitespace.
 

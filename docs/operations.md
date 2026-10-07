@@ -65,6 +65,10 @@ service with an unverified binary or share A release access with B's runtime ide
 
 ## External setup, in order
 
+Deferred by [ADR 0008](../architecture/adr/0008-local-first-proof-of-concept.md)
+until the proof of concept validates the idea. Local development needs none of
+these steps; see the [local stack](development.md#local-stack).
+
 1. Review [the pins](../scripts/tools.lock.json), the provider lockfile, infrastructure,
    and signed browser release. Run the local shared gate; then execute the workflow
    on GitHub to verify the Linux and macOS hosted environments. Configure no paid

@@ -4,18 +4,35 @@
 
 The [local foundation](../README.md) now supplies both executables, the loader/GUI asset boundary, shared checks, hosted CI configuration, three-server infrastructure, and signed release/deployment tooling. See [verification](../docs/verification.md) for executed checks and limits. Product transport, authentication, registry, task execution, recovery, and supervision remain planned. Complete each proof before broadening scope. ADRs record the design; this page tracks the work needed to deliver it.
 
+[ADR 0008](adr/0008-local-first-proof-of-concept.md) puts a local proof of concept first: the whole product runs on one machine on the [local stack](../docs/development.md#local-stack), and the [external setup](../docs/operations.md#external-setup-in-order) waits until the idea is validated.
+
 ## Build sequence
 
 | Step | Deliverable | Exit condition |
 | --- | --- | --- |
-| 1. Foundation and transport | Go executables, trusted loader/ingress, bounded registration, signaling, direct/TURN paths, authentication | Two machines connect across representative networks in both sharing modes; both peers can relay through C over TCP/TLS. UUID-only access, replay, and substituted peers fail. Established sessions survive B shutdown. Measure connection time, relay usage, and cost |
-| 2. One useful task with recovery | Existing script, typed input, verified owner-served GUI, progress/result, durable handles and acceptance, independent supervision | Coworker completes a task unaided. Authorization, timeout/size/concurrency limits, deduplication, reload recovery, and abrupt runner-death checks already pass on macOS and Linux |
-| 3. Failure and exposure controls | File recovery, expiry/revocation, retention, cancellation, registry restore/cleanup | Complete the failure checks below; downloads retry without rerunning tasks; capacity and cleanup preserve existing ownership and recovery |
-| 4. Delivery | Restricted releases, platform binaries, clear errors, polished GUI | Verify production deployment isolation; independently review authentication; critique rendered UI; pilot publication of real scripts |
+| 1. Local proof of concept | On the local stack: bounded registration, signaling, TURN credential issuance, direct and relayed WebRTC, authentication, one existing script with typed input, verified owner-served GUI, progress and result | A browser on the owner's machine completes a shared task in both sharing modes, over direct and forced-relay paths. End-to-end tests drive the CLI, stack, and Chromium. UUID-only access, replay, and substituted peers fail. Established sessions survive B shutdown |
+| 2. Transport across networks | The deferred external setup; direct/TURN paths between machines | Two machines connect across representative networks in both sharing modes; both peers can relay through C over TCP/TLS. Measure connection time, relay usage, and cost |
+| 3. One useful task with recovery | Durable handles and acceptance, independent supervision | Coworker completes a task unaided. Authorization, timeout/size/concurrency limits, deduplication, reload recovery, and abrupt runner-death checks already pass on macOS and Linux |
+| 4. Failure and exposure controls | File recovery, expiry/revocation, retention, cancellation, registry restore/cleanup | Complete the failure checks below; downloads retry without rerunning tasks; capacity and cleanup preserve existing ownership and recovery |
+| 5. Delivery | Restricted releases, platform binaries, clear errors, polished GUI | Verify production deployment isolation; independently review authentication; critique rendered UI; pilot publication of real scripts |
+
+## Local proof of concept
+
+The local stack supplies the frontend, app, and a TURN stand-in on loopback, the
+owner CLI's service origin, and in-process stacks for tests. The proof of concept
+adds product code in this order, each with its local check:
+
+| Work | Where it plugs in | Local proof |
+| --- | --- | --- |
+| Registration and signaling | New fixed WSS routes on B; A forwards them only after their [ingress checks](adr/0003-trusted-browser-client.md#ingress-and-executable-content) land | Go test against `devstack.Start`: an owner registers and a second peer exchanges offers through A |
+| TURN credential issuance | B reads the shared secret file and TURN URIs from its configuration; `devstack` passes `var/dev/turn-secret` and the stand-in's URIs | Issued credentials allocate relays on the stand-in; expired or forged ones fail |
+| Sharing from the CLI | The CLI resolves its origin as `runlink status` does and prints `{origin}/{uuid}#{secret}` | The printed link opens the loader on the local frontend |
+| WebRTC and authentication | Pion in the runner, `RTCPeerConnection` in the GUI, ICE servers from B | Chromium end-to-end test over direct and `iceTransportPolicy: 'relay'` paths |
+| One task | Runner executes the fixed command; the loader verifies the owner-served GUI | Chromium end-to-end test completes a task and shows its result |
 
 ## Required proofs
 
-These are acceptance criteria for future implementation, not tests that have already passed.
+These are acceptance criteria for future implementation, not tests that have already passed. Under [ADR 0008](adr/0008-local-first-proof-of-concept.md), each can first be proven on the local stack except TURN fallback across real networks and production deployment isolation.
 
 | Contract | Proof |
 | --- | --- |

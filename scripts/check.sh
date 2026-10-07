@@ -25,10 +25,16 @@ actionlint
 go vet ./...
 go test -race -count=1 ./...
 scripts/build.sh
+# Development stand-ins never reach the shipped executables (ADR 0008).
+if go list -deps ./cmd/runlink ./cmd/runlink-server | grep -E '^(runlink/internal/devstack|github\.com/pion/)'; then
+  printf 'Shipped executables must not import the local stack\n' >&2
+  exit 1
+fi
 
 # Behavior of the built artifacts and rendered configuration.
 python3 scripts/lifecycle.py
 node scripts/browser.test.mjs
+node scripts/stack.test.mjs
 python3 scripts/infra-check.py
 python3 scripts/turn-check.py
 python3 scripts/release-test.py

@@ -2,12 +2,14 @@ package main
 
 import (
 	"bytes"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"runlink/internal/buildinfo"
+	"runlink/internal/devstack"
 )
 
 func env(service string) func(string) string {
@@ -19,17 +21,21 @@ func env(service string) func(string) string {
 	}
 }
 
-func TestStatusReportsService(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/status" {
-			http.NotFound(w, r)
-			return
+// End-to-end tests start the local stack in-process and point the CLI at it.
+func TestStatusThroughLocalStack(t *testing.T) {
+	stack, err := devstack.Start(t.Context(), devstack.Config{
+		Frontend: "127.0.0.1:0", App: "127.0.0.1:0", TURN: "127.0.0.1:0", StateDir: t.TempDir(),
+	}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := stack.Stop(); err != nil {
+			t.Error(err)
 		}
-		_, _ = w.Write([]byte(`{"status":"scaffold"}`))
-	}))
-	defer upstream.Close()
+	})
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"status"}, env(upstream.URL), &stdout, &stderr); code != 0 || stdout.String() != upstream.URL+": scaffold\n" {
+	if code := run([]string{"status"}, env(stack.Frontend), &stdout, &stderr); code != 0 || stdout.String() != stack.Frontend+": scaffold\n" {
 		t.Fatalf("exit %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
 	}
 }

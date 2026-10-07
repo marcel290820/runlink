@@ -22,15 +22,20 @@ scripts/check.sh
 scripts/dev.sh
 ```
 
-Open <http://127.0.0.1:8080>. The trusted loader captures a link secret and explains
-that secure owner connections are not available yet. Ctrl-C stops both services.
-The app listens on `127.0.0.1:8081`; the frontend listens on `127.0.0.1:8080`.
+`scripts/dev.sh` runs the whole product on loopback: the trusted frontend on
+`127.0.0.1:8080`, the app on `127.0.0.1:8081`, and a TURN stand-in for coturn on
+`127.0.0.1:3478`. Nothing needs a server, DNS, certificate, or cloud account; see
+the [local stack](docs/development.md#local-stack) and
+[ADR 0008](architecture/adr/0008-local-first-proof-of-concept.md). Open
+<http://127.0.0.1:8080>: the loader captures a link secret and explains that secure
+owner connections are not available yet. In another terminal, the owner CLI finds
+the stack without configuration. Ctrl-C stops all three services.
 
 ```bash
-scripts/build.sh
+build/runlink status
 build/runlink --help
-build/runlink --version
 build/runlink-server --help
+build/runlink-dev --help
 ```
 
 Tools, caches, browsers, and extracted shared libraries stay in `.tools/`. Set
@@ -39,7 +44,7 @@ No bootstrap or check command needs sudo, Docker, a cloud token, or a GitHub sec
 
 | Guide | Contents |
 | --- | --- |
-| [Development](docs/development.md) | Actual commands, config, asset generation, and check coverage |
-| [Operations](docs/operations.md) | Signed packaging, local deployment, rollback, and exact external setup |
+| [Development](docs/development.md) | Commands, the local stack, config, asset generation, and check coverage |
+| [Operations](docs/operations.md) | Signed packaging, local deployment, rollback, and the deferred external setup |
 | [Verification](docs/verification.md) | Local evidence and infrastructure/platform limits |
 | [Implementation plan](architecture/implementation.md) | Remaining product build sequence and proofs |

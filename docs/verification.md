@@ -27,11 +27,21 @@ and stopped both children on SIGTERM and when one child exited. A counterpart re
 found regressions that were fixed with checks that fail without the fix: IPv6 zones
 smuggling URL syntax into the upstream, waiting for the body of a rejected upstream
 status, smoke accepting non-200 success, and blocking on a FIFO in a release.
+The local stack of [ADR 0008](../architecture/adr/0008-local-first-proof-of-concept.md)
+was added in a separate worktree. A clean bootstrap into an empty tools directory
+on Ubuntu 24.04 amd64 passed the gate before and after the change, using tools
+bootstrapped into an empty directory. Release builds
+of `runlink` and `runlink-server` link no Pion package; only `runlink-dev` and
+tests do.
+
 The gate's checks cover:
 
 | Area | Evidence |
 | --- | --- |
 | Go foundation | Formatting, vet, compilation, both executable builds, race-enabled tests |
+| Local stack | In-process stacks on free ports: A relays B's status, private state and secret modes, a persistent secret, refusal of a shared state directory and of FIFO, symlinked or oversized secrets, loopback-only listeners, port conflicts and a failing B stop the whole stack; built `runlink-dev` starts, the built CLI reaches it through `RUNLINK_SERVICE`, SIGTERM drains both servers; development builds target the default stack |
+| TURN stand-in | Credentials computed independently of Pion allocate relays in the coturn port range and carry data relay to relay; expired, forged and wrong-password credentials, a fifth allocation per credential, also under concurrent TCP allocations, and peers outside loopback are refused; a failing TURN listener stops the stack, and shutdown closes TCP clients and frees relay ports; rejections are logged without passwords or the secret. Chromium exchanges data-channel messages through relay-only UDP and TCP paths from the loader origin and gets no relay for forged or expired credentials |
+| Owner CLI | Service origin validation without echoing values; status through the local stack; error statuses, redirects, non-JSON, trailing-data, oversized, truncated and terminal-escape responses rejected; a packaged release defaults to `https://runlink.dev`, proven through an unreachable loopback proxy |
 | Runtime | Actual help/version/error commands, config-file overrides, private writable-state setup and shared-directory rejection, health/readiness, frontend-to-app status relay between the built binaries, SIGTERM listener closure, header timeout, request drain and bounded forced shutdown; native HTTPS/HSTS with temporary certificates, obsolete TLS rejection and missing-material fail-closed behavior |
 | Browser assets | Deterministic regeneration check, complete asset manifest, Chromium fragment/history cleanup, empty browser storage, reload and separate-secret entry, password field clearing, approved GUI execution and modified-GUI rejection |
 | Ingress | Malicious HTML/SVG/JS, redirects, unexpected statuses, oversize/error bodies, hostile MIME/CSP/cookie/worker headers, fixed routing, no credential-header forwarding, worker/upgrade rejection, actual browser API navigation/worker isolation |
@@ -58,8 +68,12 @@ through a second, independent source:
 | GitHub Actions | Pinned SHAs are the `v7.0.1` tag commits in the official repositories; GitHub-verified commits |
 | Ubuntu 26.04 libraries | `InRelease` signatures by the Ubuntu Archive Automatic Signing Key (2018) `F6ECB3762474EDA9D21B7022871920D1991BC93C`; all 34 hashes match the signed package indexes |
 | Chromium headless shell 153.0.8010.12 | Playwright CDN bytes identical to Google's Chrome for Testing bucket on all four platforms |
+| Go modules for `runlink-dev` (pion/turn 4.1.4 and its dependencies, newest stable on 2026-10-07) | `go.sum` hashes are checked against the sum.golang.org transparency log; all 20 modules in the graph were fetched again directly from their origin repositories and match `go.sum`, and a tampered hash fails. The tagged commits of pion/turn 4.1.4, pion/dtls 3.1.10 and pion/transport 5.1.1 carry valid signatures by `686E6E5F8D157DE2B8DFA974A8CD240651DB01B6` (Jo Turk), published on keys.openpgp.org and registered on the committer's GitHub account; pion/stun 3.1.7 and wlynxg/anet 0.0.5 carry GitHub web-flow signatures by `968479A1AFF927E37D1A566BB5690EEEBB952194` |
 
-Upstream publishes no signature for two pins. ShellCheck 0.11.0 has no signatures or
+pion/logging 0.2.4, pion/randutil 0.1.0, pion/transport 4.1.1, golang.org/x/crypto
+0.57.0 and golang.org/x/sys 0.48.0 have unsigned tags and commits; they rest on the
+checksum database and the matching origin fetch. Upstream publishes no signature
+for two tool pins. ShellCheck 0.11.0 has no signatures or
 attestations; the pinned `.tar.gz` files were uploaded by the maintainer on 2026-01-05
 and contain binaries identical to the CI-uploaded `.tar.xz` release assets.
 Playwright's ffmpeg 1011 exists only on Microsoft's CDN, so its pin is trust on first
@@ -113,22 +127,30 @@ and archives are ignored.
 - [README.md](../README.md)
 - [architecture/README.md](../architecture/README.md)
 - [architecture/adr/0007-local-shipping-foundation.md](../architecture/adr/0007-local-shipping-foundation.md)
+- [architecture/adr/0008-local-first-proof-of-concept.md](../architecture/adr/0008-local-first-proof-of-concept.md)
 - [architecture/implementation.md](../architecture/implementation.md)
 - [docs/development.md](development.md)
 - [docs/operations.md](operations.md)
 - [docs/verification.md](verification.md)
 - [go.mod](../go.mod)
+- [go.sum](../go.sum)
 - [package-lock.json](../package-lock.json)
 - [package.json](../package.json)
 
 ### Executables
 
+- [cmd/runlink-dev/main.go](../cmd/runlink-dev/main.go)
 - [cmd/runlink-server/main.go](../cmd/runlink-server/main.go)
 - [cmd/runlink/main.go](../cmd/runlink/main.go)
+- [cmd/runlink/main_test.go](../cmd/runlink/main_test.go)
 
 ### Go implementation and browser assets
 
 - [internal/buildinfo/version.go](../internal/buildinfo/version.go)
+- [internal/devstack/stack.go](../internal/devstack/stack.go)
+- [internal/devstack/stack_test.go](../internal/devstack/stack_test.go)
+- [internal/devstack/turn.go](../internal/devstack/turn.go)
+- [internal/devstack/turn_test.go](../internal/devstack/turn_test.go)
 - [internal/frontend/assets/capture.js](../internal/frontend/assets/capture.js)
 - [internal/frontend/assets/gui.js](../internal/frontend/assets/gui.js)
 - [internal/frontend/assets/index.html](../internal/frontend/assets/index.html)
@@ -165,6 +187,7 @@ and archives are ignored.
 - [scripts/release-test.py](../scripts/release-test.py)
 - [scripts/release.py](../scripts/release.py)
 - [scripts/release.sh](../scripts/release.sh)
+- [scripts/stack.test.mjs](../scripts/stack.test.mjs)
 - [scripts/tools.lock.json](../scripts/tools.lock.json)
 - [scripts/turn-check.py](../scripts/turn-check.py)
 
