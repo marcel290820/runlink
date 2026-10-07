@@ -25,6 +25,7 @@ import zlib
 ROOT = Path(__file__).resolve().parents[1]
 PLATFORMS = ('linux-amd64', 'linux-arm64', 'darwin-amd64', 'darwin-arm64')
 SERVICES = ('runlink-app', 'runlink-frontend')
+PRODUCTION_ORIGIN = 'https://runlink.dev'  # the owner CLI's default; development builds use the local stack
 VERSION = re.compile(r'v[0-9]+\.[0-9]+\.[0-9]+(?:-[a-z0-9.]+)?')
 ARCHIVE = re.compile(rf'runlink-({VERSION.pattern})-((?:linux|darwin)-(?:amd64|arm64))\.tar\.gz')
 MANIFEST_LINE = re.compile(r'([0-9a-f]{64})  (.+)')
@@ -57,7 +58,8 @@ def build(target, version):
         for command in ('runlink', 'runlink-server'):
             binary = Path(temp) / command
             run('go', 'build', '-trimpath', '-buildvcs=false',
-                '-ldflags', f'-s -w -X runlink/internal/buildinfo.Version={version}',
+                '-ldflags', f'-s -w -X runlink/internal/buildinfo.Version={version} '
+                f'-X runlink/internal/buildinfo.Service={PRODUCTION_ORIGIN}',
                 '-o', str(binary), f'./cmd/{command}', cwd=ROOT, env=env)
             entries[f'bin/{command}'] = binary.read_bytes()
     return entries
@@ -86,6 +88,7 @@ def package(args):
         raise ReleaseError('Generated browser assets are stale')
     metadata = {
         'version': args.version,
+        'service': PRODUCTION_ORIGIN,
         'revision': run('git', 'rev-parse', 'HEAD', cwd=ROOT).stdout.decode().strip(),
         'dirty': bool(run('git', 'status', '--porcelain', cwd=ROOT).stdout),
         'assets': json.loads((ROOT / 'internal/frontend/assets/manifest.json').read_text()),

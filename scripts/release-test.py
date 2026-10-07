@@ -75,6 +75,12 @@ def check_install_and_failed_update(fixture):
     assert current(root) == f'releases/{V1}'
     result = subprocess.run([root / 'current/bin/runlink', '--version'], capture_output=True, text=True, check=True)
     assert V1 in result.stdout
+    # The packaged CLI targets production by default. An unreachable proxy proves
+    # it without leaving loopback.
+    proxied = {key: value for key, value in os.environ.items() if key.lower() not in {'runlink_service', 'no_proxy'}}
+    proxied |= {'HTTPS_PROXY': UNREACHABLE, 'https_proxy': UNREACHABLE}
+    result = subprocess.run([root / 'current/bin/runlink', 'status'], capture_output=True, text=True, env=proxied)
+    assert result.returncode == 1 and result.stderr == 'runlink: https://runlink.dev is unreachable\n', result
     with server('--state-dir', fixture.directory / 'state', binary=root / 'current/bin/runlink-server') as (origin, stop):
         release('smoke', origin)
         stop()
