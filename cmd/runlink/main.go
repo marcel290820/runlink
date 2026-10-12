@@ -17,11 +17,19 @@ import (
 	"runlink/internal/buildinfo"
 )
 
-const usage = `Usage: runlink [help | version | status]
+const usage = `runlink turns a script on this machine into a link that runs it from a browser.
+Publishing is not available yet.
 
-Share bounded tasks from your machine. Publishing is not implemented yet.
-  status   Check the Runlink service; RUNLINK_SERVICE overrides its origin
-  version  Print version
+Usage:
+  runlink <command>
+
+Commands:
+  status    Check that the Runlink service is reachable
+  version   Print the version
+  help      Show this help
+
+Environment:
+  RUNLINK_SERVICE   Service origin; this build defaults to %s
 `
 
 // A status response is one small JSON object; statusText bounds what a server
@@ -32,8 +40,8 @@ var statusText = regexp.MustCompile(`^[a-z_]{1,64}$`)
 
 // Service errors are fixed text, so they never echo the configured value.
 var (
-	errOrigin = errors.New("RUNLINK_SERVICE must be an origin such as https://runlink.dev")
-	errScheme = errors.New("RUNLINK_SERVICE must use https, or http with a loopback IP")
+	errOrigin = errors.New("runlink: RUNLINK_SERVICE must be an origin such as https://runlink.dev")
+	errScheme = errors.New("runlink: RUNLINK_SERVICE must use https, or http with a loopback IP")
 )
 
 func main() { os.Exit(run(os.Args[1:], os.Getenv, os.Stdout, os.Stderr)) }
@@ -45,7 +53,7 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 	if len(args) == 1 {
 		switch args[0] {
 		case "help", "--help", "-h":
-			fmt.Fprint(stdout, usage)
+			fmt.Fprintf(stdout, usage, buildinfo.Service)
 			return 0
 		case "version", "--version":
 			fmt.Fprintln(stdout, "runlink", buildinfo.Version)
@@ -59,7 +67,7 @@ func run(args []string, getenv func(string) string, stdout, stderr io.Writer) in
 			return status(origin, stdout, stderr)
 		}
 	}
-	fmt.Fprintln(stderr, "unknown command; use runlink --help")
+	fmt.Fprintln(stderr, "runlink: unknown command; run runlink help")
 	return 2
 }
 
