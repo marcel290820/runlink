@@ -5,7 +5,7 @@ set -euo pipefail
 source "$(dirname "$0")/env.sh"
 cd "$RUNLINK_ROOT"
 
-[[ $(go version) == 'go version go1.27.1 '* ]] || { printf 'Run scripts/bootstrap.sh for pinned Go\n' >&2; exit 1; }
+[[ $(go version) == 'go version go1.27.2 '* ]] || { printf 'Run scripts/bootstrap.sh for pinned Go\n' >&2; exit 1; }
 [[ $(node --version) == v24.21.0 ]] || { printf 'Run scripts/bootstrap.sh for pinned Node\n' >&2; exit 1; }
 
 # Sources: generated assets, docs, formatting, lint, and syntax.

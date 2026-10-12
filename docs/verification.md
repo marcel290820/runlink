@@ -59,7 +59,7 @@ through a second, independent source:
 
 | Pin | Proof |
 | --- | --- |
-| Go 1.27.1 | Each archive's GPG signature verifies with a subkey of Google's Linux packages key `EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796`, as published on google.com/linuxrepositories |
+| Go 1.27.2 | Each archive's GPG signature verifies with a subkey of Google's Linux packages key `EB4C1BFD4F042F6DDDCCEC917721F63BD38B4796`, as published on google.com/linuxrepositories |
 | Node 24.21.0 | `SHASUMS256.txt` is signed by `5BE8A3F6C8A5C01D106C0AD820B1A390B168D356`, an active releaser in the nodejs/node README; locked hashes match |
 | OpenTofu 1.13.1 | `SHA256SUMS` GPG signature by `E3E6E43D84CB852EADB0051D0C0AF313E5FD9F80` (also in opentofu/opentofu docs and keys.openpgp.org); Sigstore certificate for `opentofu/opentofu` `release.yml@refs/heads/v1.13` chains to the Fulcio root, verifies the file and matches Rekor entry 3037839244 |
 | hcloud provider 1.70.0 | `SHA256SUMS` signed by `1454BE0E275F52F52467BBF65219EACB3A77198B`, the key both the OpenTofu and Terraform registries list; all 13 `zh:` and `h1:` lock hashes recomputed from the signed zips |

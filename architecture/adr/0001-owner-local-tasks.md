@@ -14,7 +14,7 @@ Execute bounded tasks on the owner's machine. Ship one `runlink` binary for macO
 
 | Area | Choice | Reason |
 | --- | --- | --- |
-| CLI and application server | Go 1.27.1; one module, two executables; standard library first | Network I/O and binary distribution |
+| CLI and application server | Go 1.27.2; one module, two executables; standard library first | Network I/O and binary distribution |
 | Browser | HTML, CSS, vanilla JavaScript; CLI embeds GUI with `go:embed` | Fixed task interaction without a frontend framework/runtime |
 | Peer transport | Browser WebRTC and Pion WebRTC v4 | Native data channels and NAT traversal; [ADR 0002](0002-webrtc-transport.md) |
 | Signaling | HTTPS/WSS; `net/http` and `coder/websocket` | Small control messages and outbound owner connections |
