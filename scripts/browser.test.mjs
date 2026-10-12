@@ -65,45 +65,226 @@ await once(upstream, 'listening');
 
 const frontend = startFrontend(`http://127.0.0.1:${upstream.address().port}`);
 let browser;
+// A task as the authenticated transport will hand it to the GUI. Its run records
+// each call and settles only when the test says so.
+const TASK = {
+  title: 'Rename <img src=x onerror=globalThis.pwned=1> files',
+  description: 'Fixture task.',
+  owner: 'Dana',
+  output: { kind: 'file', label: 'a ZIP archive' },
+  inputs: [
+    { name: 'prefix', type: 'text', label: 'Prefix', required: true },
+    { name: 'count', type: 'number', label: 'Count', min: 1, max: 9, step: 1, required: true },
+    { name: 'dry', type: 'boolean', label: 'Dry run', default: true },
+    { name: 'region', type: 'choice', label: 'Region', options: ['EMEA', { value: 2, label: 'Americas' }], default: 'EMEA', required: true },
+    { name: 'list', type: 'file', label: 'List', accept: '.csv' },
+    // Named controls become form properties, so this name would break submission.
+    { name: 'contains', type: 'text', label: 'Note' },
+    { name: 'tone', type: 'choice', label: 'Tone', options: ['Warm', 'Cool'] },
+  ],
+};
+function installTask(definition) {
+  // Record the type of every object URL the GUI creates.
+  const create = URL.createObjectURL;
+  window.blobTypes = [];
+  URL.createObjectURL = blob => {
+    if (blob.type !== 'text/javascript') window.blobTypes.push(blob.type);
+    return create.call(URL, blob);
+  };
+  window.calls = [];
+  window.task = {
+    definition,
+    run: (values, progress) => new Promise((resolve, reject) => window.calls.push({ values, progress, resolve, reject })),
+  };
+}
+
 try {
   const origin = await within(frontend.origin, 10_000, 'runlink-server startup');
   browser = await chromium.launch();
   const page = await browser.newPage();
   const errors = [];
+  const logged = [];
   const requests = [];
   page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => message.type() === 'error' && logged.push(message.text()));
   page.on('request', request => requests.push(request.url()));
-  const status = () => page.locator('#status').textContent();
+  const state = () => page.locator('#gate').getAttribute('data-state');
 
   // The fragment secret is captured, then removed before anything else runs.
   await page.goto(`${origin}${TASK_PATH}#fixture-secret`);
-  await page.waitForFunction(() => document.getElementById('status').textContent.startsWith('Link captured'));
+  await page.waitForFunction(() => document.getElementById('gate').dataset.state === 'unavailable');
   assert.equal(new URL(page.url()).hash, '');
   assert.deepEqual(await page.evaluate(() => ({ state: history.state, local: { ...localStorage }, session: { ...sessionStorage } })),
     { state: null, local: {}, session: {} });
   assert(!requests.some(url => url.includes('fixture-secret')));
+  assert.match(await page.locator('#note').textContent(), /browser history/);
+  // The trusted fonts load under the page CSP; a refused font would log a console error.
+  assert.deepEqual(await page.evaluate(async () => {
+    await Promise.all([document.fonts.load('16px Archivo'), document.fonts.load('16px "Martian Mono"')]);
+    return [...document.fonts].filter(font => font.status === 'loaded').map(font => font.family.replaceAll('"', '')).sort();
+  }), ['Archivo', 'Martian Mono']);
 
-  // Reloading needs the secret again; entering it clears the field.
+  // Reloading needs the secret again; a blank entry is refused, and entering one clears the field.
   await page.reload();
-  await page.waitForFunction(() => document.getElementById('status').textContent.startsWith('Enter'));
-  await page.locator('#secret').fill('separately-delivered-fixture');
-  await page.locator('button').click();
+  await page.waitForFunction(() => document.getElementById('gate').dataset.state === 'secret');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'secret');
+  await page.locator('#secret').fill('   ');
+  await page.locator('#secret-form button').click();
+  assert.equal(await state(), 'secret');
+  assert.equal(await page.locator('#secret').getAttribute('aria-invalid'), 'true');
+  assert.equal(await page.evaluate(() => window.runlinkSession.present()), false);
+  await page.locator('#secret').fill(' separately-delivered-fixture ');
+  await page.locator('#secret-form button').click();
   assert.equal(await page.locator('#secret').inputValue(), '');
-  assert((await status()).startsWith('Secret captured'));
+  assert.equal(await state(), 'unavailable');
+  assert.equal(await page.evaluate(() => window.runlinkSession.consume()), 'separately-delivered-fixture');
 
-  // Only the approved GUI bytes execute.
+  // Only the approved GUI bytes execute, and they replace the gate.
   const gui = [...await readFile('internal/frontend/assets/gui.js')];
+  await page.evaluate(installTask, TASK);
   const mounted = await page.evaluate(async data => {
     const { verifyGUI, mountGUI } = await import('/assets/loader.mjs');
     const bytes = new Uint8Array(data);
     await verifyGUI(bytes);
     let rejected = false;
-    try { await mountGUI(new Uint8Array([...data, 32])); } catch { rejected = true; }
-    await mountGUI(bytes);
-    return { rejected, text: document.getElementById('task').textContent };
+    try { await mountGUI(new Uint8Array([...data, 32]), window.task); } catch { rejected = true; }
+    await mountGUI(bytes, window.task);
+    return { rejected, title: document.querySelector('.title').textContent, gate: document.getElementById('gate-view').hidden };
   }, gui);
-  assert(mounted.rejected);
-  assert(mounted.text.includes('Task workspace'));
+  assert.deepEqual(mounted, { rejected: true, title: TASK.title, gate: true });
+  assert.equal(await page.locator('#task img').count(), 0);
+
+  // Required input is checked before anything is sent.
+  const calls = () => page.evaluate(() => window.calls.length);
+  await page.locator('.run').click();
+  assert.equal(await calls(), 0);
+  assert.equal(await page.locator('#input-0').getAttribute('aria-invalid'), 'true');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'input-0');
+  await page.locator('#input-0').fill('night-');
+  await page.locator('#input-1').fill('12');
+  await page.locator('.run').click();
+  assert.equal(await calls(), 0);
+  assert.match(await page.locator('#input-1-error').textContent(), /from 1 to 9/);
+  await page.locator('#input-1').fill('3');
+  // A rejected file keeps its input focusable while the picked file shows, and removing it clears the error.
+  await page.locator('#input-4').setInputFiles({ name: 'names.txt', mimeType: 'text/plain', buffer: Buffer.from('x') });
+  await page.locator('.run').click();
+  assert.equal(await calls(), 0);
+  assert.equal(await page.locator('#input-4').getAttribute('aria-invalid'), 'true');
+  assert.match(await page.locator('#input-4-error').textContent(), /\.csv/);
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'input-4');
+  await page.getByRole('button', { name: 'Remove names.txt' }).click();
+  assert.equal(await page.locator('#input-4').getAttribute('aria-invalid'), null);
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'input-4');
+  await page.locator('.segments label', { hasText: 'Americas' }).click();
+  // An optional choice without a preset starts on None, which sends nothing.
+  assert(await page.getByRole('radio', { name: 'None' }).isChecked());
+  await page.locator('#input-5').fill('quiet');
+  await page.locator('#input-5').press('Control+Enter');
+
+  // Values arrive typed; the empty optional fields are left out.
+  assert.deepEqual(await page.evaluate(() => window.calls[0].values), { prefix: 'night-', count: 3, dry: true, region: 2, contains: 'quiet' });
+  const stage = () => page.locator('.bench').getAttribute('data-stage');
+  assert.equal(await stage(), 'sending');
+  // Acceptance is not execution: the clock starts only once the task runs.
+  await page.evaluate(() => window.calls[0].progress({ stage: 'accepted' }));
+  assert.equal(await stage(), 'accepted');
+  assert.equal(await page.locator('.readout').textContent(), 'Accepted');
+  assert.equal(await page.locator('.readout.time').count(), 0);
+  await page.evaluate(() => window.calls[0].progress({ stage: 'running', message: 'Renaming 3 files', fraction: 0.5 }));
+  assert.equal(await stage(), 'running');
+  assert.equal(await page.locator('.readout.time').count(), 1);
+  assert.equal(await page.locator('.log li').last().textContent(), 'Renaming 3 files');
+  // While a run is in flight each value is locked in place as text and Run gives way to a status line.
+  assert(await page.locator('.run').isHidden());
+  assert(await page.locator('.sent').isVisible());
+  assert(await page.locator('#input-0').isDisabled());
+  assert.deepEqual(await page.locator('.shown').allTextContents(), ['night-', '3', 'Yes', 'Americas', 'None', 'quiet', 'None']);
+  assert(await page.locator('.shown').first().isVisible());
+
+  // Files are offered only as downloads, never rendered in this origin.
+  await page.evaluate(() => window.calls[0].resolve([
+    { kind: 'file', name: 'renamed.zip', blob: new Blob(['<script>globalThis.pwned=1</script>'], { type: 'text/html' }) },
+    { kind: 'text', label: 'Log', value: '<b>3 renamed</b>' },
+    { kind: 'file', name: 'names.csv', blob: new Blob(['name,count,note\r\n"Doe, Jane",1200,"said ""hi"""\r\nRoe,7,'], { type: 'text/csv' }) },
+    { kind: 'json', value: { order_id: 7, eta: '2026-10-14', giftWrapped: false } },
+    { kind: 'file', name: 'values.csv', blob: new Blob(['value\n""\n\nhello\n'], { type: 'text/csv' }) },
+    // A raster image shows as a picture whatever its name says; an SVG never does.
+    { kind: 'file', name: 'chart.bin', blob: new Blob([Uint8Array.from(atob(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='), c => c.charCodeAt(0))]) },
+    { kind: 'file', name: 'logo.svg', blob: new Blob(['<svg xmlns="http://www.w3.org/2000/svg" onload="globalThis.pwned=1"/>'], { type: 'image/svg+xml' }) },
+  ]));
+  assert.equal(await stage(), 'done');
+  const download = page.locator('a.download').first();
+  assert.equal(await download.getAttribute('download'), 'renamed.zip');
+  await page.waitForSelector('img.picture');
+  assert.deepEqual(await page.evaluate(() => window.blobTypes.sort()), [...Array(5).fill('application/octet-stream'), 'image/png']);
+  assert.equal(await page.locator('img.picture').count(), 1);
+  assert.equal(await page.locator('img.picture').evaluate(img => img.naturalWidth), 1);
+  const [saved] = await Promise.all([page.waitForEvent('download'), download.click()]);
+  assert.equal(saved.suggestedFilename(), 'renamed.zip');
+  assert.equal(await page.getByLabel('Result text').textContent(), '<b>3 renamed</b>');
+  // A CSV shows its first rows, quotes and a final empty cell included, with numbers on the
+  // right; a text-like file gets a preview, still as text.
+  await page.waitForSelector('.sheet');
+  assert.deepEqual(await page.locator('.sheet').first().evaluate(table => [...table.rows].map(row => [...row.cells].map(cell => cell.textContent))),
+    [['name', 'count', 'note'], ['Doe, Jane', '1200', 'said "hi"'], ['Roe', '7', '']]);
+  assert.deepEqual(await page.locator('.sheet').first().locator('.num').allTextContents(), ['count', '1200', '7']);
+  // A quoted empty record is data; a blank line is not.
+  await page.waitForFunction(() => document.querySelectorAll('.sheet').length === 2);
+  assert.deepEqual(await page.locator('.sheet').nth(1).evaluate(table => [...table.rows].map(row => [...row.cells].map(cell => cell.textContent))),
+    [['value'], [''], ['hello']]);
+  assert.deepEqual(await page.locator('.pairs dt').allTextContents(), ['Order ID', 'ETA', 'Gift wrapped']);
+  assert.equal(await page.locator('.peek pre').textContent(), '<script>globalThis.pwned=1</script>');
+  assert.equal(await page.locator('.result b').count(), 0);
+  assert.match(await page.title(), /^Done/);
+
+  // The runner's field errors land on the fields; uncoded errors reveal nothing.
+  await page.locator('.run').click();
+  await page.evaluate(() => window.calls[1].reject(Object.assign(new Error('Prefix in use'), { code: 'invalid', fields: { prefix: 'Already taken.' } })));
+  assert.equal(await page.locator('.bench').getAttribute('data-fault'), 'invalid');
+  assert.match(await page.locator('#input-0-error').textContent(), /Already taken/);
+  // The owner's message reads in full in the result.
+  assert.equal(await page.locator('.fault .detail').textContent(), 'Prefix in use');
+  // The rejected field is editable again and holds focus.
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'input-0');
+  assert(await page.locator('#input-0').isEnabled());
+  await page.locator('.run').click();
+  await page.evaluate(() => window.calls[2].reject(new TypeError('internal detail')));
+  assert.equal(await page.locator('.bench').getAttribute('data-fault'), 'unknown');
+  assert(!(await page.locator('.bench').textContent()).includes('internal detail'));
+
+  // Nothing on the wire moves between states, even with a short form and a long owner name.
+  const tops = await page.evaluate(async data => {
+    const { mountGUI } = await import('/assets/loader.mjs');
+    let run;
+    const owner = 'University of California Berkeley Department of Civil and Environmental Engineering';
+    await mountGUI(new Uint8Array(data), { definition: { title: 'Short', owner, inputs: [{ name: 'q', type: 'text' }] },
+      run: (values, progress) => new Promise((resolve, reject) => { run = { progress, resolve, reject }; }) });
+    // Page coordinates: submitting scrolls the machine into view.
+    const top = () => Math.round(document.querySelector('.w2').getBoundingClientRect().top + scrollY);
+    const seen = [top()];
+    document.querySelector('.run').click();
+    for (const message of ['one', 'two', 'three', 'four', 'five']) run.progress({ stage: 'running', message });
+    seen.push(top());
+    run.reject(Object.assign(new Error('x'.repeat(300)), { code: 'failed' }));
+    await new Promise(resolve => setTimeout(resolve));
+    return [...seen, top()];
+  }, gui);
+  assert.equal(new Set(tops).size, 1, `the wire moved: ${tops}`);
+
+  // A definition the GUI does not understand, down to one property's type, fails loudly instead of rendering.
+  assert.deepEqual(await page.evaluate(async data => {
+    const { mountGUI } = await import('/assets/loader.mjs');
+    const inputs = [{ name: 'a', type: 'html' }, { name: 'a', type: ['text'] }, { name: 'a', type: 'file', accept: 5 },
+      { name: 'a', type: 'choice', options: [{ value: {} }] }, { name: 'a', type: 'date', default: 'tomorrow' },
+      { name: 'a', type: 'date', default: '2026-13-01' }, { name: 'a', type: 'date', max: '2026-02-30' },
+      { name: 'a', type: 'date', default: '0000-01-01' }, { name: 'a', type: 'date', min: '0000-01-01' }, { name: 'a', type: 'date', max: '0000-12-31' }];
+    return Promise.all(inputs.map(input => mountGUI(new Uint8Array(data), { definition: { title: 'x', inputs: [input] }, run() {} })
+      .then(() => 'mounted', error => error.message)));
+  }, gui), Array(10).fill('Unsupported task definition'));
+  // CSP refusals, such as a blocked font, surface only as console errors.
+  assert.deepEqual(logged, []);
 
   // The hostile body cannot run as a worker, a script, or a navigated document.
   assert(await page.evaluate(async () => {
@@ -125,7 +306,8 @@ try {
   assert.deepEqual(await browser.contexts()[0].cookies(), []);
   assert.equal((await fetch(`${origin}/assets/loader.mjs`, { headers: { 'Service-Worker': 'script' } })).status, 403);
   assert.deepEqual(errors, []);
-  console.log('Chromium: fragment cleanup, reload, secret entry, GUI verification/execution, ingress and worker isolation passed');
+  console.log('Chromium: fragment cleanup, reload, secret entry, fonts, GUI verification, input checks, run states, ' +
+    'download-only files, ingress and worker isolation passed');
 } finally {
   // Every teardown step runs even when another fails; the first failure is reported.
   upstream.close();

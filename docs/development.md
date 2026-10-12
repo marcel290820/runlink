@@ -129,16 +129,19 @@ data, and request-path errors are excluded.
 ## Browser trust boundary
 
 The server binary embeds the served assets with `go:embed`. The trusted frontend
-serves only `/`, lowercase UUID task paths, and the exact loader/style/manifest routes.
-The GUI bundle is neither embedded nor served by A. The future authenticated owner
-transport will embed it in the owner binary and deliver it.
+serves only `/`, lowercase UUID task paths, and the exact loader, style, manifest,
+and two font routes. The GUI bundle is neither embedded nor served by A. The future
+authenticated owner transport will embed it in the owner binary and deliver it.
 
 The first inline script captures a fragment in memory and clears the current URL
 and history state before the module loader starts. Separately entered secrets are
-removed from the password field. No browser storage, request, or logging code
-persists those values. The GUI mount function verifies the complete bytes against
-the loader's generated approved SHA-256 list before creating executable content.
-Tests call the mount function directly; there is no production connection path yet.
+trimmed and removed from the password field. No browser storage, request, or logging
+code persists those values. `mountGUI(bytes, task)` verifies the complete bytes
+against the loader's generated approved SHA-256 list before creating executable
+content. The GUI registers `runlinkGUI`, and the loader hands it the task object;
+the header of [gui.js](../internal/frontend/assets/gui.js) documents the task
+definition and the run contract the transport must provide. Tests call the mount
+function directly with a fake task; there is no production connection path yet.
 
 `assets.py` fills `internal/frontend/loader.template.mjs` with the GUI approval
 and `internal/frontend/index.template.html` with the inline capture script and SRI
@@ -146,6 +149,25 @@ hashes, then covers every asset in a deterministic manifest. The frontend comput
 its hash-based CSP from the embedded page's inline script and the loader bytes. Trusted Types permits only the loader's
 verified GUI object URL; the CSP disables workers, framing, base URL changes, and
 other executable sources. The GUI uses `textContent` and safe DOM creation.
+
+The page sets interface text in Archivo and data in Martian Mono, vendored as WOFF2
+subsets that only A serves, under `font-src 'self'`. Both use the SIL Open Font
+License 1.1 ([fonts-OFL.txt](../internal/frontend/fonts-OFL.txt)). They were built
+from the variable fonts in google/fonts at commit
+`bd8f81ddb5c74d5c8897b36ad88b440266245103`: `ofl/archivo/Archivo[wdth,wght].ttf`
+(SHA-256 `0e094a7d3c7c4c25cf1310c4b30014f1dae9332220b1c2c88f4fa996f0b05053`) and
+`ofl/martianmono/MartianMono[wdth,wght].ttf`
+(SHA-256 `c3467843ec1c2574b05fbcfd7147c7bfbcf63ddca8fc2bcb9d117f1bfb1b22e7`).
+fontTools 4.60.1 with Brotli reproduces the manifest's hashes when
+`SOURCE_DATE_EPOCH=1791763200` is set:
+
+```bash
+U='U+0020-007E,U+00A0-017F,U+0192,U+02C6-02DC,U+2000-206F,U+20A0-20CF,U+2100-214F,U+2190-21FF,U+2200-22FF,U+25A0-25FF'
+fonttools varLib.instancer 'Archivo[wdth,wght].ttf' wght=400:900 wdth=100:125 -o archivo.ttf
+pyftsubset archivo.ttf --unicodes="$U" --layout-features+=tnum,zero,case,lnum --flavor=woff2 --output-file=archivo.woff2
+fonttools varLib.instancer 'MartianMono[wdth,wght].ttf' wght=400:700 wdth=87.5:112.5 -o martian.ttf
+pyftsubset martian.ttf --unicodes="$U" --layout-features+=zero,case --flavor=woff2 --output-file=martian-mono.woff2
+```
 
 The sole forwarded API is `GET /api/v1/status`. A forwards no recipient headers,
 cookies, query, or body. It accepts bounded JSON and a small status allowlist,

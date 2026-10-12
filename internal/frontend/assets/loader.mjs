@@ -1,17 +1,53 @@
-const approvedGUI = Object.freeze(["4358bb62e16ade9f3336dba8742d97b27b5a09f71bee70a7e5895e86564fbe23"]);
+const approvedGUI = Object.freeze(["764d59b32e790f7de34df6022107364d23354ea9e8d2ec7afdaaa5bbd299f1d0"]);
 
-const status = document.getElementById('status');
+// The gate shows where the link stands until the verified GUI replaces it.
+const gate = document.getElementById('gate');
 const form = document.getElementById('secret-form');
-status.textContent = window.runlinkSession.present()
-  ? 'Link captured. Secure owner connections are not available yet.'
-  : 'Enter the secret supplied by the owner.';
+const field = document.getElementById('secret');
+const fieldError = document.getElementById('secret-error');
+const note = document.getElementById('note');
+const states = {
+  secret: ['Enter the link secret', 'The owner sends it separately from the link.'],
+  unavailable: ["Can't connect yet", "This version of Runlink can't reach the owner's machine, so nothing was sent. " +
+    'Let the person who sent you the link know.'],
+};
+const reloadNote = 'You will need the secret again if you reload this page.';
+const historyNote = 'This link contains its secret, so it can stay in your browser history and on synced devices. ' +
+  'To keep it out, ask the owner to send the secret separately.';
+
+function show(state, hint) {
+  const [title, status] = states[state];
+  gate.dataset.state = state;
+  document.getElementById('gate-title').textContent = title;
+  document.getElementById('status').textContent = status;
+  form.hidden = state !== 'secret';
+  note.textContent = hint;
+  note.hidden = false;
+}
+
+if (window.runlinkSession.present()) {
+  show('unavailable', historyNote);
+} else {
+  show('secret', reloadNote);
+  field.focus();
+}
+field.addEventListener('input', () => {
+  fieldError.textContent = '';
+  field.removeAttribute('aria-invalid');
+});
 form.addEventListener('submit', event => {
   event.preventDefault();
-  const field = document.getElementById('secret');
-  const secret = field.value;
+  // Pasted secrets often carry stray whitespace; a generated secret never contains any.
+  const secret = field.value.trim();
   field.value = '';
+  if (!secret) {
+    fieldError.textContent = 'Paste the secret the owner sent you.';
+    field.setAttribute('aria-invalid', 'true');
+    field.focus();
+    return;
+  }
   window.runlinkSession.capture(secret);
-  status.textContent = 'Secret captured. Secure owner connections are not available yet.';
+  show('unavailable', reloadNote);
 });
 
 export async function verifyGUI(bytes) {
@@ -22,7 +58,8 @@ export async function verifyGUI(bytes) {
   return hash;
 }
 
-// The authenticated transport will call this after peer authentication is implemented.
+// The authenticated transport will call this after peer authentication is implemented,
+// with the task object that gui.js documents. The GUI registers runlinkGUI when it runs.
 const urls = new Set();
 const policy = window.trustedTypes?.createPolicy('runlink-gui', {
   createScriptURL(value) {
@@ -30,7 +67,7 @@ const policy = window.trustedTypes?.createPolicy('runlink-gui', {
     return value;
   }
 });
-export async function mountGUI(bytes) {
+export async function mountGUI(bytes, task) {
   await verifyGUI(bytes);
   const url = URL.createObjectURL(new Blob([bytes], { type: 'text/javascript' }));
   urls.add(url);
@@ -43,4 +80,9 @@ export async function mountGUI(bytes) {
       document.head.append(script);
     });
   } finally { urls.delete(url); URL.revokeObjectURL(url); }
+  const gui = window.runlinkGUI;
+  delete window.runlinkGUI;
+  if (typeof gui?.mount !== 'function') throw new Error('GUI did not register');
+  gui.mount(document.getElementById('task'), task);
+  document.getElementById('gate-view').hidden = true;
 }

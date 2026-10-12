@@ -13,23 +13,38 @@
   });
 })();</script>
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>Runlink</title>
-<link rel="stylesheet" href="/assets/style.css" integrity="sha256-bVA+WL224UkjwmbIRvcEGtUxkfqGwRlaJgWzoURNsWc=">
-<script type="module" src="/assets/loader.mjs" integrity="sha256-yW/Qb2wDgtJyGuYsHMg02U9bAMhXrQTY23FIhoI6Y/g="></script>
+<link rel="preload" href="/assets/archivo.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/assets/martian-mono.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/style.css" integrity="sha256-FxU9v01je9yE9lIikVdGAE48/qYerNfgdxc85oJ/U1E=">
+<script type="module" src="/assets/loader.mjs" integrity="sha256-5lJxU+YB6Nakw5wL1TVytODmU+T/Jn8a6BYlrvzwuAo="></script>
 </head>
 <body>
-<main>
-<h1>Runlink</h1>
-<p>Run a shared task on its owner's machine.</p>
-<p id="status" role="status">Preparing your link…</p>
-<form id="secret-form">
-<label for="secret">Link secret</label>
-<input id="secret" type="password" autocomplete="off" maxlength="256" required>
-<button type="submit">Continue</button>
+<div class="view" id="gate-view">
+<header class="bar"><span class="brand"><svg class="mark" viewBox="0 0 30 12" aria-hidden="true"><path d="M10 6h10"/><circle cx="6" cy="6" r="4"/><circle cx="24" cy="6" r="4"/></svg><span>run<b>link</b></span></span></header>
+<main class="gate" id="gate" data-state="opening">
+<h1 id="gate-title">Opening your link</h1>
+<p id="status" role="status">Getting the link ready.</p>
+<p class="about">Runlink runs a task on its owner's computer and shows you the result. There is nothing to install.</p>
+<div class="span">
+<span class="end" aria-hidden="true">You</span>
+<span class="wire" aria-hidden="true"></span>
+<div class="mid">
+<form id="secret-form" class="secret" novalidate hidden>
+<label class="sr" for="secret">Link secret</label>
+<input id="secret" class="control" type="password" placeholder="Paste the secret" autocomplete="off" spellcheck="false" maxlength="256" aria-describedby="secret-error">
+<button class="primary" type="submit">Connect</button>
 </form>
-<p class="note">A secret-bearing link may remain in browser history or synchronization.
-Receive the secret separately to keep it out of the URL. Reloading requires the original link or secret.</p>
-<section id="task" aria-live="polite"></section>
+</div>
+<span class="wire" aria-hidden="true"></span>
+<span class="end" aria-hidden="true">Owner's machine</span>
+</div>
+<p class="error" id="secret-error"></p>
+<noscript><p>Turn on JavaScript to open this link.</p></noscript>
 </main>
+<footer class="foot"><p id="note" hidden></p></footer>
+</div>
+<div id="task"></div>
 </body>
 </html>

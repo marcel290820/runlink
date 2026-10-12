@@ -19,14 +19,19 @@ var (
 	style []byte
 	//go:embed assets/manifest.json
 	manifest []byte
+	//go:embed assets/archivo.woff2
+	archivo []byte
+	//go:embed assets/martian-mono.woff2
+	martianMono []byte
 )
 
 // CSP admits exactly the page's inline capture script and the loader module. The
 // loader's verified GUI runs through 'strict-dynamic', and Trusted Types limits
-// script URLs to the loader's policy.
+// script URLs to the loader's policy. Fonts come only from A's own font routes, and
+// images only from object URLs the GUI made for result previews.
 var CSP = "default-src 'none'; " +
 	"script-src " + scriptHash(inlineScript(index)) + " " + scriptHash(loader) + " 'strict-dynamic'; " +
-	"style-src 'self'; connect-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; worker-src 'none'; " +
+	"style-src 'self'; font-src 'self'; img-src blob:; connect-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; worker-src 'none'; " +
 	"require-trusted-types-for 'script'; trusted-types runlink-gui"
 
 var taskPath = regexp.MustCompile(`^/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
@@ -43,6 +48,10 @@ func Asset(path string) (data []byte, contentType string, ok bool) {
 		return style, "text/css; charset=utf-8", true
 	case path == "/assets/manifest.json":
 		return manifest, "application/json", true
+	case path == "/assets/archivo.woff2":
+		return archivo, "font/woff2", true
+	case path == "/assets/martian-mono.woff2":
+		return martianMono, "font/woff2", true
 	}
 	return nil, "", false
 }

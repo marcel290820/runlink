@@ -1,22 +1,30 @@
 {
+  "archivo.woff2": {
+    "sha256": "e9259020bd18d8e84fc2da7e56e83a7b78e7f2eff3fdbd869c57691f0d1ecc78",
+    "size": 86332
+  },
   "capture.js": {
     "sha256": "d38c85fc7851fbd6d3de99a07089f152a3a4026ccc80f666f6aa4d000758b4fb",
     "size": 414
   },
   "gui.js": {
-    "sha256": "4358bb62e16ade9f3336dba8742d97b27b5a09f71bee70a7e5895e86564fbe23",
-    "size": 335
+    "sha256": "764d59b32e790f7de34df6022107364d23354ea9e8d2ec7afdaaa5bbd299f1d0",
+    "size": 37676
   },
   "index.html": {
-    "sha256": "15eaa302b679d88ae9c3943c533cf1fcfa66ba20133f6c25d5c628b1706104b9",
-    "size": 1425
+    "sha256": "aa8183e0705a568914bf8cf36b2997f694d8666b8472d01784baca13fda18a0f",
+    "size": 2403
   },
   "loader.mjs": {
-    "sha256": "c96fd06f6c0382d2721ae62c1cc834d94f5b00c857ad04d8db714886823a63f8",
-    "size": 1971
+    "sha256": "e6527153e601e8d6a4c39c0bd53572b4e0e653e4ff267f1ae81625aefcf0b80a",
+    "size": 3627
+  },
+  "martian-mono.woff2": {
+    "sha256": "03f79ddab2c0b89068f9e7c48330de56e6eb7977656a7dd2112b9a92c59169e2",
+    "size": 30804
   },
   "style.css": {
-    "sha256": "6d503e58bdb6e14923c266c846f7041ad53191fa86c1195a2605b3a1444db167",
-    "size": 466
+    "sha256": "17153dbf4d637bdc84f65222915746004e3cfea61eacd7e077173ce6827f5351",
+    "size": 29492
   }
 }

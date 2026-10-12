@@ -121,7 +121,7 @@ func TestIngressRoutesAreFixed(t *testing.T) {
 	defer upstream.Close()
 	handler := frontendHandler(upstream.URL)
 
-	for _, path := range []string{"/api/unknown", "/assets/gui.js", "/assets/capture.js", "/evil.js",
+	for _, path := range []string{"/api/unknown", "/assets/gui.js", "/assets/capture.js", "/assets/other.woff2", "/evil.js",
 		"/../api/v1/status", "/api/v1/status?secret=value", "/?secret=value", strings.ToUpper(taskURL), taskURL + "/"} {
 		w := httptest.NewRecorder()
 		handler.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
@@ -131,11 +131,13 @@ func TestIngressRoutesAreFixed(t *testing.T) {
 	}
 
 	pages := map[string]string{
-		"/":                     "text/html; charset=utf-8",
-		taskURL:                 "text/html; charset=utf-8",
-		"/assets/loader.mjs":    "text/javascript; charset=utf-8",
-		"/assets/style.css":     "text/css; charset=utf-8",
-		"/assets/manifest.json": "application/json",
+		"/":                          "text/html; charset=utf-8",
+		taskURL:                      "text/html; charset=utf-8",
+		"/assets/loader.mjs":         "text/javascript; charset=utf-8",
+		"/assets/style.css":          "text/css; charset=utf-8",
+		"/assets/manifest.json":      "application/json",
+		"/assets/archivo.woff2":      "font/woff2",
+		"/assets/martian-mono.woff2": "font/woff2",
 	}
 	for path, contentType := range pages {
 		w := httptest.NewRecorder()

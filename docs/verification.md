@@ -43,7 +43,7 @@ The gate's checks cover:
 | TURN stand-in | Credentials computed independently of Pion allocate relays in the coturn port range and carry data relay to relay; expired, forged and wrong-password credentials, a fifth allocation per credential, also under concurrent TCP allocations, and peers outside loopback are refused; a failing TURN listener stops the stack, and shutdown closes TCP clients and frees relay ports; rejections are logged without passwords or the secret. Chromium exchanges data-channel messages through relay-only UDP and TCP paths from the loader origin and gets no relay for forged or expired credentials |
 | Owner CLI | Service origin validation without echoing values; status through the local stack; error statuses, redirects, non-JSON, trailing-data, oversized, truncated and terminal-escape responses rejected; a packaged release defaults to `https://runlink.dev`, proven through an unreachable loopback proxy |
 | Runtime | Actual help/version/error commands, config-file overrides, private writable-state setup and shared-directory rejection, health/readiness, frontend-to-app status relay between the built binaries, SIGTERM listener closure, header timeout, request drain and bounded forced shutdown; native HTTPS/HSTS with temporary certificates, obsolete TLS rejection and missing-material fail-closed behavior |
-| Browser assets | Deterministic regeneration check, complete asset manifest, Chromium fragment/history cleanup, empty browser storage, reload and separate-secret entry, password field clearing, approved GUI execution and modified-GUI rejection |
+| Browser assets | Deterministic regeneration check, complete asset manifest, Chromium fragment/history cleanup, empty browser storage, reload and separate-secret entry, blank-secret refusal and password field clearing, fonts loading under the page CSP, approved GUI execution and modified-GUI rejection; with a fake task: owner text rendered as text, required, range and file-type checks before sending with focus on the first problem, typed values with empty optional fields left out, owner field names that cannot shadow form properties, acceptance kept apart from running, sent values locked as text, the result-side wire kept in place through every run state, file results saved only as octet-stream downloads, raster images previewed by their bytes and SVG never, CSV previews that keep quoted empty records and final empty cells, runner field errors focused, the owner's failure message shown in full, uncoded failures shown without detail, definitions with unsupported types, property types, or impossible dates refused |
 | Ingress | Malicious HTML/SVG/JS, redirects, unexpected statuses, oversize/error bodies, hostile MIME/CSP/cookie/worker headers, fixed routing, no credential-header forwarding, worker/upgrade rejection, actual browser API navigation/worker isolation |
 | CI | YAML parsing, actionlint, immutable action references, Linux/macOS hosted matrix, read-only permissions, short retention, shared gate invocation |
 | Infrastructure | OpenTofu format/validate, pinned provider initialization and a signed 13-platform checksum lock; mocked three-server apply and unrestricted-SSH rejection; actual cloud-init schema validation, shell syntax/lint, systemd unit validation in a temporary root |
@@ -151,12 +151,15 @@ and archives are ignored.
 - [internal/devstack/stack_test.go](../internal/devstack/stack_test.go)
 - [internal/devstack/turn.go](../internal/devstack/turn.go)
 - [internal/devstack/turn_test.go](../internal/devstack/turn_test.go)
+- [internal/frontend/assets/archivo.woff2](../internal/frontend/assets/archivo.woff2)
 - [internal/frontend/assets/capture.js](../internal/frontend/assets/capture.js)
 - [internal/frontend/assets/gui.js](../internal/frontend/assets/gui.js)
 - [internal/frontend/assets/index.html](../internal/frontend/assets/index.html)
 - [internal/frontend/assets/loader.mjs](../internal/frontend/assets/loader.mjs)
 - [internal/frontend/assets/manifest.json](../internal/frontend/assets/manifest.json)
+- [internal/frontend/assets/martian-mono.woff2](../internal/frontend/assets/martian-mono.woff2)
 - [internal/frontend/assets/style.css](../internal/frontend/assets/style.css)
+- [internal/frontend/fonts-OFL.txt](../internal/frontend/fonts-OFL.txt)
 - [internal/frontend/frontend.go](../internal/frontend/frontend.go)
 - [internal/frontend/frontend_test.go](../internal/frontend/frontend_test.go)
 - [internal/frontend/index.template.html](../internal/frontend/index.template.html)
