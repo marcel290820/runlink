@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pion/turn/v4"
+	"github.com/pion/turn/v5"
 )
 
 // The secret file format C's startup helper accepts, spelled independently of B.
@@ -141,6 +141,19 @@ func TestTURNKeepsCoturnBounds(t *testing.T) {
 	}
 	if _, err := turnClient(t, stack.TURN, username, password).Allocate(); err == nil {
 		t.Fatal("allocation beyond the per-credential quota succeeded")
+	}
+	// The quota is per credential, not per name: the same name with another expiry
+	// is another credential.
+	other, otherPassword := restCredential(stack.TURNSecret, "quota", time.Now().Add(11*time.Minute))
+	same, err := turnClient(t, stack.TURN, other, otherPassword).Allocate()
+	if err != nil {
+		t.Fatalf("another credential with the same name: %v", err)
+	}
+	t.Cleanup(func() { _ = same.Close() })
+	// coturn runs with no-tcp-relay: TCP reaches the server, relays are UDP only.
+	tcpClient, _ := tcpTURNClient(t, stack.TURN, other, otherPassword)
+	if _, err := tcpClient.AllocateTCP(); err == nil {
+		t.Fatal("a TCP relay was allocated")
 	}
 
 	username, password = restCredential(stack.TURNSecret, "policy", time.Now().Add(10*time.Minute))

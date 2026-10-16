@@ -56,7 +56,7 @@ restarts: 64 lowercase hex characters, mode `0600`, generated on first start and
 validated as C validates it. The directory must be private (`0700`) and the secret
 a regular file. Delete `var/dev` to start fresh. `--frontend`,
 `--app`, `--turn`, and `--state-dir` move the stack; addresses must be loopback,
-TURN's IPv4 because Pion relays IPv4 only, and port 0 picks a free port.
+TURN's IPv4 because IPv6 TURN waits for the real server, and port 0 picks a free port.
 
 Development builds of the owner CLI target `http://127.0.0.1:8080`; release
 builds stamp `https://runlink.dev`. `RUNLINK_SERVICE` overrides either, with plain

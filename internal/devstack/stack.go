@@ -35,7 +35,8 @@ func DefaultConfig() Config {
 }
 
 // Validate keeps every stand-in on this machine: none has the production
-// controls that would make it safe to expose. Pion allocates IPv4 relays only.
+// controls that would make it safe to expose. TURN stays on IPv4: ADR 0008
+// leaves IPv6 TURN to the real server.
 func (c Config) Validate() error {
 	for _, listener := range []struct {
 		name, address string

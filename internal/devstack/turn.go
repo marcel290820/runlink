@@ -13,15 +13,15 @@ import (
 	"time"
 
 	"github.com/pion/logging"
-	"github.com/pion/turn/v4"
+	"github.com/pion/turn/v5"
 
 	"runlink/internal/server"
 )
 
 // The stand-in keeps the coturn bounds from infra/templates/turnserver.conf.tftpl
 // that clients can observe: the relay port range and the allocation quotas.
-// Pion's server relays UDP only, as coturn does with no-tcp-relay. Bandwidth
-// caps, TLS, and the firewall stay with the real server.
+// It relays UDP only, as coturn does with no-tcp-relay. Bandwidth caps, TLS, and
+// the firewall stay with the real server.
 const (
 	turnRealm    = "localhost"
 	relayMinPort = 49160
@@ -65,12 +65,14 @@ func startTURN(address netip.AddrPort, secret string, logger *slog.Logger) (*tur
 	rest := turn.LongTermTURNRESTAuthHandler(secret, pionLogger{slog.New(slog.DiscardHandler)})
 	s.pion, err = turn.NewServer(turn.ServerConfig{
 		Realm: turnRealm,
-		AuthHandler: func(username, realm string, source net.Addr) ([]byte, bool) {
-			key, ok := rest(username, realm, source)
+		// The whole username identifies the user, so quotas count per credential
+		// as coturn's do; Pion's handler would use only the part after the expiry.
+		AuthHandler: func(request *turn.RequestAttributes) (string, []byte, bool) {
+			_, key, ok := rest(request)
 			if !ok {
-				logger.Warn("turn_auth_rejected", "username", username, "reason", "expired or malformed username")
+				logger.Warn("turn_auth_rejected", "username", request.Username, "reason", "expired or malformed username")
 			}
-			return key, ok
+			return request.Username, key, ok
 		},
 		QuotaHandler:  quota.allow,
 		LoggerFactory: pionLogger{logger},
@@ -188,13 +190,13 @@ type relayPorts struct {
 	*turn.RelayAddressGeneratorPortRange
 }
 
-func (r relayPorts) AllocatePacketConn(network string, port int) (net.PacketConn, net.Addr, error) {
+func (r relayPorts) AllocatePacketConn(conf turn.AllocateListenerConfig) (net.PacketConn, net.Addr, error) {
 	r.s.mu.Lock()
 	defer r.s.mu.Unlock()
 	if r.s.closing {
 		return nil, nil, net.ErrClosed
 	}
-	conn, addr, err := r.RelayAddressGeneratorPortRange.AllocatePacketConn(network, port)
+	conn, addr, err := r.RelayAddressGeneratorPortRange.AllocatePacketConn(conf)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -204,6 +206,12 @@ func (r relayPorts) AllocatePacketConn(network string, port int) (net.PacketConn
 		r.s.relays--
 		r.s.mu.Unlock()
 	})}, addr, nil
+}
+
+var errNoTCPRelay = errors.New("TCP relays are disabled, as with coturn's no-tcp-relay")
+
+func (relayPorts) AllocateListener(turn.AllocateListenerConfig) (net.Listener, net.Addr, error) {
+	return nil, nil, errNoTCPRelay
 }
 
 type relaySocket struct {
