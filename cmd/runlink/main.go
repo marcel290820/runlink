@@ -1,7 +1,8 @@
-// Command runlink is the owner CLI. Publishing is not implemented yet.
+// Command runlink is the owner CLI: it shares a task on this machine as a link.
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,20 +11,23 @@ import (
 	"net/netip"
 	"net/url"
 	"os"
+	"os/signal"
 	"regexp"
-	"strings"
+	"syscall"
 	"time"
 
 	"runlink/internal/buildinfo"
 )
 
 const usage = `runlink turns a script on this machine into a link that runs it from a browser.
-Publishing is not available yet.
 
 Usage:
   runlink <command>
 
 Commands:
+  share [--separate-secret] <task.json or executable>
+            Share a task until Ctrl-C. An executable runs without input and
+            shows its output as text; a task file defines inputs and output.
   status    Check that the Runlink service is reachable
   version   Print the version
   help      Show this help
@@ -44,11 +48,24 @@ var (
 	errScheme = errors.New("runlink: RUNLINK_SERVICE must use https, or http with a loopback IP")
 )
 
-func main() { os.Exit(run(os.Args[1:], os.Getenv, os.Stdout, os.Stderr)) }
+func main() {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	code := run(ctx, os.Args[1:], os.Getenv, os.Stdout, os.Stderr)
+	stop()
+	os.Exit(code)
+}
 
-func run(args []string, getenv func(string) string, stdout, stderr io.Writer) int {
+func run(ctx context.Context, args []string, getenv func(string) string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		args = []string{"help"}
+	}
+	if args[0] == "share" {
+		origin, err := service(getenv)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 2
+		}
+		return share(ctx, origin, args[1:], stdout, stderr)
 	}
 	if len(args) == 1 {
 		switch args[0] {
@@ -99,11 +116,7 @@ func status(origin string, stdout, stderr io.Writer) int {
 	}
 	res, err := client.Get(origin + "/api/v1/status")
 	if err != nil {
-		hint := ""
-		if strings.HasPrefix(origin, "http:") {
-			hint = "; start the local stack with scripts/dev.sh"
-		}
-		fmt.Fprintf(stderr, "runlink: %s is unreachable%s\n", origin, hint)
+		fmt.Fprintf(stderr, "runlink: %s is unreachable%s\n", origin, localHint(origin))
 		return 1
 	}
 	defer res.Body.Close()

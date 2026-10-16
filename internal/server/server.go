@@ -12,6 +12,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
+	"sync"
 	"sync/atomic"
 )
 
@@ -30,9 +32,28 @@ func Run(ctx context.Context, c Config, listener net.Listener, logger *slog.Logg
 			return err
 		}
 	}
+	if c.TURNSecretFile != "" {
+		secret, err := ReadTURNSecret(c.TURNSecretFile)
+		if err != nil {
+			return err
+		}
+		c.turnSecret = secret
+	}
+	// Shutdown neither waits for nor closes hijacked signaling connections, so
+	// they end with their own context and Run waits for their handlers.
+	signals, endSignals := context.WithCancel(context.Background())
+	defer endSignals()
 	var ready atomic.Bool
+	var upgraded sync.WaitGroup
+	handler := Handler(signals, c, &ready)
 	s := &http.Server{
-		Handler:           Handler(c, &ready),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("Upgrade") != "" {
+				upgraded.Add(1)
+				defer upgraded.Done()
+			}
+			handler.ServeHTTP(w, r)
+		}),
 		ReadHeaderTimeout: c.ReadHeaderTimeout,
 		ReadTimeout:       c.ReadTimeout,
 		WriteTimeout:      c.WriteTimeout,
@@ -63,14 +84,17 @@ func Run(ctx context.Context, c Config, listener net.Listener, logger *slog.Logg
 
 	ready.Store(false)
 	logger.Info("server_stopping")
+	endSignals()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), c.ShutdownTimeout)
 	defer cancel()
 	if err := s.Shutdown(shutdownCtx); err != nil {
 		_ = s.Close() // the deadline error below is the cause worth reporting
 		<-served
+		upgraded.Wait()
 		return fmt.Errorf("shutdown deadline exceeded: %w", err)
 	}
 	<-served
+	upgraded.Wait()
 	logger.Info("server_stopped")
 	return nil
 }
@@ -99,11 +123,12 @@ func prepareStateDir(dir string) error {
 }
 
 // Handler applies the shared response controls and health routes, then the
-// role's fixed routes. ready decides whether /readyz succeeds.
-func Handler(c Config, ready *atomic.Bool) http.Handler {
-	routes := http.HandlerFunc(appRoutes)
+// role's fixed routes. ready decides whether /readyz succeeds, and cancelling
+// ctx closes signaling connections.
+func Handler(ctx context.Context, c Config, ready *atomic.Bool) http.Handler {
+	routes := appRoutes(&signaling{ctx: ctx, uris: c.TURNURIs, secret: c.turnSecret, owners: map[string]*owner{}})
 	if c.Role == RoleFrontend {
-		routes = frontendRoutes(c.Upstream)
+		routes = frontendRoutes(ctx, c.Upstream)
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		setInertHeaders(w.Header())
@@ -113,7 +138,9 @@ func Handler(c Config, ready *atomic.Bool) http.Handler {
 		switch {
 		case r.Header.Get("Sec-Fetch-Dest") == "serviceworker" || r.Header.Get("Service-Worker") != "":
 			writeError(w, http.StatusForbidden, "service_workers_disabled")
-		case r.Header.Get("Upgrade") != "":
+		// Signaling routes are WebSocket handshakes, and nothing else upgrades.
+		case signalRoute(r.URL.Path) && !strings.EqualFold(r.Header.Get("Upgrade"), "websocket"),
+			!signalRoute(r.URL.Path) && r.Header.Get("Upgrade") != "":
 			writeError(w, http.StatusBadRequest, "upgrades_disabled")
 		case r.Method != http.MethodGet && r.Method != http.MethodHead:
 			writeError(w, http.StatusMethodNotAllowed, "method_not_allowed")
@@ -130,12 +157,19 @@ func Handler(c Config, ready *atomic.Bool) http.Handler {
 }
 
 // appRoutes are B's routes. B listens privately behind A.
-func appRoutes(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == statusPath {
-		writeJSON(w, http.StatusOK, `{"status":"scaffold"}`)
-		return
+func appRoutes(signals *signaling) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == statusPath:
+			writeJSON(w, http.StatusOK, `{"status":"scaffold"}`)
+		case r.URL.Path == sharePath:
+			signals.share(w, r)
+		case signalRoute(r.URL.Path):
+			signals.connect(w, r, strings.TrimPrefix(r.URL.Path, connectPrefix+"/"))
+		default:
+			writeError(w, http.StatusNotFound, "not_found")
+		}
 	}
-	writeError(w, http.StatusNotFound, "not_found")
 }
 
 // setInertHeaders makes every response non-executable JSON by default. Only A's

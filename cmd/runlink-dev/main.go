@@ -70,7 +70,7 @@ func run(args []string) int {
 }
 
 func printSummary(stack *devstack.Stack, stateDir string) {
-	cli := "build/runlink status"
+	cli := "build/runlink share examples/greet.json"
 	if stack.Frontend != buildinfo.Service {
 		cli = "RUNLINK_SERVICE=" + stack.Frontend + " " + cli
 	}
@@ -82,7 +82,7 @@ func printSummary(stack *devstack.Stack, stateDir string) {
                %s
   state        %s, TURN shared secret in %s
 
-Owner CLI:  %s
+Share a task:  %s
 Ctrl-C stops all three.
 `, stack.Frontend, stack.App, stack.TURN, strings.Join(stack.TURNURIs, " "), stateDir, filepath.Join(stateDir, "turn-secret"), cli)
 }

@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -31,6 +32,12 @@ type Config struct {
 	Upstream string `json:"upstream"`  // frontend only: B's private origin, http://IP:port
 	TLSCert  string `json:"tls_cert"`  // frontend only: absolute paths
 	TLSKey   string `json:"tls_key"`
+
+	// App only: the ICE server URIs B hands to peers, and the file holding the
+	// shared secret that signs their TURN REST credentials, as on C.
+	TURNURIs       []string `json:"turn_uris"`
+	TURNSecretFile string   `json:"turn_secret_file"`
+	turnSecret     string   // read from TURNSecretFile when Run starts
 
 	ReadHeaderTimeout time.Duration `json:"-"`
 	ReadTimeout       time.Duration `json:"-"`
@@ -116,9 +123,20 @@ func (c Config) Validate() error {
 		if c.Upstream != "" {
 			return errors.New("the app role cannot have an upstream")
 		}
+		if (len(c.TURNURIs) == 0) != (c.TURNSecretFile == "") || len(c.TURNURIs) > 8 {
+			return errors.New("turn_uris and the TURN key file go together, with at most eight URIs")
+		}
+		for _, uri := range c.TURNURIs {
+			if !iceURI.MatchString(uri) {
+				return errors.New("turn_uris must be stun:, turn: or turns: host:port URIs")
+			}
+		}
 	case RoleFrontend:
 		if !validUpstream(c.Upstream) {
 			return errors.New("upstream must be exactly http://IP:port with a private or loopback IP")
+		}
+		if len(c.TURNURIs) > 0 || c.TURNSecretFile != "" {
+			return errors.New("only the app role issues TURN credentials")
 		}
 	}
 	for _, d := range []time.Duration{c.ReadHeaderTimeout, c.ReadTimeout, c.WriteTimeout, c.IdleTimeout, c.ShutdownTimeout} {
@@ -128,6 +146,10 @@ func (c Config) Validate() error {
 	}
 	return nil
 }
+
+// iceURI is what browsers and Pion accept as an ICE server URI, without the
+// user-info or query parameters other than coturn's transport.
+var iceURI = regexp.MustCompile(`^(stun|turns?):[0-9A-Za-z.:\[\]-]{1,255}(\?transport=(udp|tcp))?$`)
 
 // validUpstream accepts only a bare origin, so appending a route path cannot
 // turn into a query, fragment, userinfo, or another port.

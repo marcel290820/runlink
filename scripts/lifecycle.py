@@ -61,7 +61,7 @@ def check_dev_stack():
             process.terminate()
             stdout, logs = process.communicate(timeout=5)
             assert process.returncode == 0, logs
-            assert f"RUNLINK_SERVICE={event['frontend']} build/runlink status".encode() in stdout, stdout
+            assert f"RUNLINK_SERVICE={event['frontend']} build/runlink share examples/greet.json".encode() in stdout, stdout
             assert logs.count(b'"msg":"server_stopped"') == 2, logs
         finally:
             if process.poll() is None:

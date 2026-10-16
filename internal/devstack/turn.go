@@ -5,19 +5,17 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/netip"
 	"os"
-	"regexp"
-	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/pion/logging"
 	"github.com/pion/turn/v4"
+
+	"runlink/internal/server"
 )
 
 // The stand-in keeps the coturn bounds from infra/templates/turnserver.conf.tftpl
@@ -31,11 +29,6 @@ const (
 	userQuota    = 4 // allocations per credential username
 	totalQuota   = 100
 )
-
-// The shared secret has the format C's startup helper accepts.
-const maxSecretFile = 4096
-
-var secretFormat = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // turnServer is the stand-in for C. Pion's Close stops only the listeners and
 // leaves accepted TCP connections and allocation relay sockets to its own
@@ -318,36 +311,14 @@ func (pionLogger) Tracef(string, ...any)                    {}
 
 // loadOrCreateSecret returns the TURN shared secret at path, generating a new
 // private one when the file does not exist. It keeps across restarts, as the
-// secret on B and C does, so issued credentials stay valid. The file must be a
-// small private regular file; symlinks are not followed and a FIFO cannot block.
+// secret on B and C does, so issued credentials stay valid. B reads the same
+// file and validates it the same way.
 func loadOrCreateSecret(path string) (string, error) {
-	file, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	secret, err := server.ReadTURNSecret(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return createSecret(path)
 	}
-	if err != nil {
-		return "", fmt.Errorf("cannot read the TURN secret: %w", err)
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil {
-		return "", fmt.Errorf("cannot read the TURN secret: %w", err)
-	}
-	switch {
-	case !info.Mode().IsRegular():
-		return "", errors.New("the TURN secret must be a regular file")
-	case info.Mode().Perm()&0o077 != 0:
-		return "", errors.New("the TURN secret file must be private (0600)")
-	}
-	data, err := io.ReadAll(io.LimitReader(file, maxSecretFile+1))
-	if err != nil {
-		return "", fmt.Errorf("cannot read the TURN secret: %w", err)
-	}
-	secret := strings.TrimSpace(string(data)) // as C's startup helper reads it
-	if len(data) > maxSecretFile || !secretFormat.MatchString(secret) {
-		return "", errors.New("the TURN secret must be 64 lowercase hex characters")
-	}
-	return secret, nil
+	return secret, err
 }
 
 func createSecret(path string) (string, error) {

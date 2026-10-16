@@ -108,11 +108,13 @@ try {
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => message.type() === 'error' && logged.push(message.text()));
   page.on('request', request => requests.push(request.url()));
+  page.on('websocket', socket => requests.push(socket.url()));
   const state = () => page.locator('#gate').getAttribute('data-state');
 
-  // The fragment secret is captured, then removed before anything else runs.
+  // The fragment secret is captured, then removed before anything else runs. A
+  // fragment that cannot be a whole secret is reported as an incomplete link.
   await page.goto(`${origin}${TASK_PATH}#fixture-secret`);
-  await page.waitForFunction(() => document.getElementById('gate').dataset.state === 'unavailable');
+  await page.waitForFunction(() => document.getElementById('gate').dataset.reason === 'incomplete');
   assert.equal(new URL(page.url()).hash, '');
   assert.deepEqual(await page.evaluate(() => ({ state: history.state, local: { ...localStorage }, session: { ...sessionStorage } })),
     { state: null, local: {}, session: {} });
@@ -124,20 +126,30 @@ try {
     return [...document.fonts].filter(font => font.status === 'loaded').map(font => font.family.replaceAll('"', '')).sort();
   }), ['Archivo', 'Martian Mono']);
 
-  // Reloading needs the secret again; a blank entry is refused, and entering one clears the field.
+  // Reloading needs the secret again; blank and partial entries are refused, and entering one clears the field.
   await page.reload();
   await page.waitForFunction(() => document.getElementById('gate').dataset.state === 'secret');
   assert.equal(await page.evaluate(() => document.activeElement.id), 'secret');
-  await page.locator('#secret').fill('   ');
-  await page.locator('#secret-form button').click();
-  assert.equal(await state(), 'secret');
-  assert.equal(await page.locator('#secret').getAttribute('aria-invalid'), 'true');
-  assert.equal(await page.evaluate(() => window.runlinkSession.present()), false);
-  await page.locator('#secret').fill(' separately-delivered-fixture ');
+  for (const entry of ['   ', 'separately-delivered-fixture']) {
+    await page.locator('#secret').fill(entry);
+    await page.locator('#secret-form button').click();
+    assert.equal(await state(), 'secret');
+    assert.equal(await page.locator('#secret').getAttribute('aria-invalid'), 'true');
+    assert.equal(await page.locator('#secret').inputValue(), '');
+  }
+  assert.equal(await page.evaluate(() => window.runlinkSession.consume()), '');
+  // A hostile upstream cannot complete signaling, so the loader reports the owner unreachable and offers a retry.
+  const secret = 'separately-delivered-fixture-0123456789abcd';
+  await page.locator('#secret').fill(` ${secret} `);
   await page.locator('#secret-form button').click();
   assert.equal(await page.locator('#secret').inputValue(), '');
-  assert.equal(await state(), 'unavailable');
-  assert.equal(await page.evaluate(() => window.runlinkSession.consume()), 'separately-delivered-fixture');
+  await page.waitForFunction(() => document.getElementById('gate').dataset.reason === 'unreachable');
+  assert(await page.locator('#retry').isVisible());
+  assert(requests.some(url => url.endsWith(`/api/v1/connect${TASK_PATH}`)));
+  assert(!requests.some(url => url.includes('fixture-secret') || url.includes(secret)));
+  // The browser itself logs the refused handshake: A answered with its own 502.
+  assert.deepEqual(logged.splice(0).map(text => text.replace(/127\.0\.0\.1:\d+/, 'A')),
+    [`WebSocket connection to 'ws://A/api/v1/connect${TASK_PATH}' failed: Error during WebSocket handshake: Unexpected response code: 502`]);
 
   // Only the approved GUI bytes execute, and they replace the gate.
   const gui = [...await readFile('internal/frontend/assets/gui.js')];
@@ -314,5 +326,5 @@ try {
   const teardown = await Promise.allSettled([browser?.close(), stop(frontend.child, frontend.logs)]);
   const failure = teardown.find(result => result.status === 'rejected');
   if (failure) throw failure.reason;
-  assert(!frontend.logs.join('\n').includes('fixture-secret'));
+  assert(!frontend.logs.join('\n').includes('fixture'));
 }

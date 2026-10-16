@@ -100,9 +100,10 @@ these steps; see the [local stack](development.md#local-stack).
    `TURN_DOMAIN`. Supply a new random 32-byte shared secret as 64 lowercase hex
    characters in `/etc/runlink/turn-secret`, root-owned, group `runlink`, mode `0640`.
    Run `/etc/letsencrypt/renewal-hooks/deploy/runlink-tls` on C to install restricted
-   certificate copies and start/restart `runlink-turn`. B will receive the same secret
-   separately when credential issuance is implemented. The scaffold never issues TURN
-   credentials. On both A and C, enable/verify the certbot renewal timer and test renewal.
+   certificate copies and start/restart `runlink-turn`. B issues TURN credentials from
+   the same secret: give it a root-owned `0600` copy through systemd `LoadCredential=`
+   and set `turn_uris` and `turn_secret_file` in its `server.json`, which the
+   infrastructure templates do not render yet. On both A and C, enable/verify the certbot renewal timer and test renewal.
    `/etc/letsencrypt` holds persistent ACME state; `/etc/runlink/tls` holds the restricted
    runtime copies. TCP 80 is reserved for issuance/renewal, not an application listener.
 7. Confirm A's public HTTPS and health/readiness; confirm B:8081 is reachable only

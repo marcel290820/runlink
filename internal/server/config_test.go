@@ -26,6 +26,10 @@ func TestValidateAcceptsSupportedConfigs(t *testing.T) {
 		"public IPv4 TLS":   func(c *Config) { *c = publicFrontend(); c.Listen = "0.0.0.0:443" },
 		"global unicast A":  func(c *Config) { *c = publicFrontend(); c.Listen = "198.51.100.10:443" },
 		"loopback with TLS": func(c *Config) { *c = publicFrontend(); c.Listen = "127.0.0.1:8443" },
+		"TURN on B": func(c *Config) {
+			c.TURNURIs = []string{"stun:10.77.0.30:3478", "turn:turn.runlink.dev:3478?transport=tcp", "turns:[2001:db8::1]:5349"}
+			c.TURNSecretFile = "/etc/runlink/turn-secret"
+		},
 	}
 	for name, change := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -46,37 +50,52 @@ func publicFrontend() Config {
 
 func TestValidateRejectsUnsafeConfigs(t *testing.T) {
 	tests := map[string]func(*Config){
-		"unknown role":            func(c *Config) { c.Role = "secret-value" },
-		"public plaintext":        func(c *Config) { c.Listen = "0.0.0.0:8081" },
-		"public plaintext IPv6":   func(c *Config) { c.Listen = "[::]:8081" },
-		"public plaintext A":      func(c *Config) { *c = frontendConfig("http://127.0.0.1:8081"); c.Listen = "0.0.0.0:443" },
-		"hostname":                func(c *Config) { c.Listen = "localhost:8081" },
-		"missing port":            func(c *Config) { c.Listen = "127.0.0.1" },
-		"port out of range":       func(c *Config) { c.Listen = "127.0.0.1:65536" },
-		"multicast":               func(c *Config) { c.Listen = "224.0.0.1:8081" },
-		"link-local":              func(c *Config) { c.Listen = "[fe80::1%eth0]:8081" },
-		"loopback zone":           func(c *Config) { c.Listen = "[::1%lo]:8081" },
-		"missing state":           func(c *Config) { c.StateDir = "" },
-		"app upstream":            func(c *Config) { c.Upstream = "http://127.0.0.1:8082" },
-		"app TLS":                 func(c *Config) { c.TLSCert, c.TLSKey = "/tls/cert.pem", "/tls/key.pem" },
-		"unpaired TLS":            func(c *Config) { *c = publicFrontend(); c.TLSKey = "" },
-		"relative TLS key":        func(c *Config) { *c = publicFrontend(); c.TLSKey = "tls/privkey.pem" },
-		"zero timeout":            func(c *Config) { c.ReadTimeout = 0 },
-		"long timeout":            func(c *Config) { c.ShutdownTimeout = 2 * time.Minute },
-		"missing upstream":        func(c *Config) { *c = frontendConfig("") },
-		"credential upstream":     func(c *Config) { *c = frontendConfig("http://secret@127.0.0.1:8081") },
-		"public upstream":         func(c *Config) { *c = frontendConfig("http://8.8.8.8:8081") },
-		"HTTPS upstream":          func(c *Config) { *c = frontendConfig("https://127.0.0.1:8081") },
-		"upstream query":          func(c *Config) { *c = frontendConfig("http://127.0.0.1:8081?secret") },
-		"upstream empty query":    func(c *Config) { *c = frontendConfig("http://127.0.0.1:8081?") },
-		"upstream fragment":       func(c *Config) { *c = frontendConfig("http://127.0.0.1:8081#") },
-		"upstream path":           func(c *Config) { *c = frontendConfig("http://127.0.0.1:8081/") },
-		"upstream hostname":       func(c *Config) { *c = frontendConfig("http://localhost:8081") },
-		"upstream without port":   func(c *Config) { *c = frontendConfig("http://127.0.0.1") },
-		"upstream port zero":      func(c *Config) { *c = frontendConfig("http://127.0.0.1:0") },
-		"upstream scheme casing":  func(c *Config) { *c = frontendConfig("HTTP://127.0.0.1:8081") },
-		"upstream zone":           func(c *Config) { *c = frontendConfig("http://[::1%lo]:8081") },
-		"upstream zone smuggling": func(c *Config) { *c = frontendConfig("http://[::1%25lo]:9090/evil]:8081") },
+		"unknown role":             func(c *Config) { c.Role = "secret-value" },
+		"public plaintext":         func(c *Config) { c.Listen = "0.0.0.0:8081" },
+		"public plaintext IPv6":    func(c *Config) { c.Listen = "[::]:8081" },
+		"public plaintext A":       func(c *Config) { *c = frontendConfig("http://127.0.0.1:8081"); c.Listen = "0.0.0.0:443" },
+		"hostname":                 func(c *Config) { c.Listen = "localhost:8081" },
+		"missing port":             func(c *Config) { c.Listen = "127.0.0.1" },
+		"port out of range":        func(c *Config) { c.Listen = "127.0.0.1:65536" },
+		"multicast":                func(c *Config) { c.Listen = "224.0.0.1:8081" },
+		"link-local":               func(c *Config) { c.Listen = "[fe80::1%eth0]:8081" },
+		"loopback zone":            func(c *Config) { c.Listen = "[::1%lo]:8081" },
+		"missing state":            func(c *Config) { c.StateDir = "" },
+		"app upstream":             func(c *Config) { c.Upstream = "http://127.0.0.1:8082" },
+		"app TLS":                  func(c *Config) { c.TLSCert, c.TLSKey = "/tls/cert.pem", "/tls/key.pem" },
+		"unpaired TLS":             func(c *Config) { *c = publicFrontend(); c.TLSKey = "" },
+		"relative TLS key":         func(c *Config) { *c = publicFrontend(); c.TLSKey = "tls/privkey.pem" },
+		"zero timeout":             func(c *Config) { c.ReadTimeout = 0 },
+		"long timeout":             func(c *Config) { c.ShutdownTimeout = 2 * time.Minute },
+		"missing upstream":         func(c *Config) { *c = frontendConfig("") },
+		"credential upstream":      func(c *Config) { *c = frontendConfig("http://secret@127.0.0.1:8081") },
+		"public upstream":          func(c *Config) { *c = frontendConfig("http://8.8.8.8:8081") },
+		"HTTPS upstream":           func(c *Config) { *c = frontendConfig("https://127.0.0.1:8081") },
+		"upstream query":           func(c *Config) { *c = frontendConfig("http://127.0.0.1:8081?secret") },
+		"upstream empty query":     func(c *Config) { *c = frontendConfig("http://127.0.0.1:8081?") },
+		"upstream fragment":        func(c *Config) { *c = frontendConfig("http://127.0.0.1:8081#") },
+		"upstream path":            func(c *Config) { *c = frontendConfig("http://127.0.0.1:8081/") },
+		"upstream hostname":        func(c *Config) { *c = frontendConfig("http://localhost:8081") },
+		"upstream without port":    func(c *Config) { *c = frontendConfig("http://127.0.0.1") },
+		"upstream port zero":       func(c *Config) { *c = frontendConfig("http://127.0.0.1:0") },
+		"upstream scheme casing":   func(c *Config) { *c = frontendConfig("HTTP://127.0.0.1:8081") },
+		"upstream zone":            func(c *Config) { *c = frontendConfig("http://[::1%lo]:8081") },
+		"upstream zone smuggling":  func(c *Config) { *c = frontendConfig("http://[::1%25lo]:9090/evil]:8081") },
+		"TURN without secret":      func(c *Config) { c.TURNURIs = []string{"turn:127.0.0.1:3478"} },
+		"TURN secret without URIs": func(c *Config) { c.TURNSecretFile = "/etc/runlink/turn-secret" },
+		"TURN on A": func(c *Config) {
+			*c = frontendConfig("http://127.0.0.1:8081")
+			c.TURNURIs, c.TURNSecretFile = []string{"turn:127.0.0.1:3478"}, "/etc/runlink/turn-secret"
+		},
+		"TURN credentials in URI": func(c *Config) {
+			c.TURNURIs, c.TURNSecretFile = []string{"turn:secret@127.0.0.1:3478"}, "/etc/runlink/turn-secret"
+		},
+		"TURN other scheme": func(c *Config) {
+			c.TURNURIs, c.TURNSecretFile = []string{"http://127.0.0.1:3478"}, "/etc/runlink/turn-secret"
+		},
+		"TURN query": func(c *Config) {
+			c.TURNURIs, c.TURNSecretFile = []string{"turn:127.0.0.1:3478?transport=tls"}, "/etc/runlink/turn-secret"
+		},
 	}
 	for name, change := range tests {
 		t.Run(name, func(t *testing.T) {

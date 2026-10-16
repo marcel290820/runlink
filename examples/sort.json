@@ -1,0 +1,12 @@
+{
+  "title": "Sort a list",
+  "description": "Sorts the lines of a text or CSV file on the owner's machine.",
+  "command": ["./sort.sh", "{list}", "{order}"],
+  "inputs": [
+    { "name": "list", "type": "file", "label": "List", "required": true, "accept": ".txt,.csv", "maxBytes": 1000000 },
+    { "name": "order", "type": "choice", "label": "Order", "options": ["ascending", "descending"], "default": "ascending" }
+  ],
+  "output": { "kind": "file", "label": "the sorted list", "name": "sorted.txt" },
+  "progress": true,
+  "timeout": 30
+}

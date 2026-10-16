@@ -85,7 +85,7 @@ func get(t *testing.T, client *http.Client, url string) (int, string) {
 
 func TestHandlerRoutesAndControls(t *testing.T) {
 	var ready atomic.Bool
-	handler := Handler(DefaultConfig(), &ready)
+	handler := Handler(context.Background(), DefaultConfig(), &ready)
 	tests := []struct {
 		name, method, path, header, value string
 		want                              int
@@ -97,6 +97,9 @@ func TestHandlerRoutesAndControls(t *testing.T) {
 		{"unknown route", "GET", "/missing", "", "", 404},
 		{"post", "POST", "/healthz", "", "", 405},
 		{"websocket", "GET", "/healthz", "Upgrade", "websocket", 400},
+		{"signaling without upgrade", "GET", "/api/v1/share", "", "", 400},
+		{"other upgrade on signaling", "GET", "/api/v1/share", "Upgrade", "h2c", 400},
+		{"connect to a non-task", "GET", "/api/v1/connect/../share", "Upgrade", "websocket", 400},
 		{"worker script", "GET", "/healthz", "Service-Worker", "script", 403},
 		{"worker fetch", "GET", "/healthz", "Sec-Fetch-Dest", "serviceworker", 403},
 	}

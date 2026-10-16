@@ -186,6 +186,8 @@ input[type="date"].control::-webkit-calendar-picker-indicator { cursor: pointer;
 .secret { display: flex; gap: 8px; width: min(460px, 54vw); }
 .secret .control { flex: 1; min-width: 0; }
 .gate[data-state="opening"] .span .wire { background: repeating-linear-gradient(90deg, var(--dash) 0 10px, transparent 10px 19px); }
+.gate[data-state="connecting"] .span .wire { background: repeating-linear-gradient(90deg, var(--wire) 0 12px, var(--hot) 12px 20px);
+  background-size: 20px 100%; animation: flow-x .45s linear infinite; }
 .gate[data-state="secret"] .span .wire { background: repeating-linear-gradient(90deg, var(--wire) 0 10px, transparent 10px 19px); }
 .gate[data-state="unavailable"] .span .mid + .wire { background: repeating-linear-gradient(90deg, var(--dash) 0 6px, transparent 6px 16px); }
 .gate[data-state="unavailable"] .span .end:last-child { opacity: .45; }

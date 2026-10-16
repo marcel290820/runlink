@@ -2,13 +2,13 @@
 
 ## Project Structure & Module Organization
 
-Runlink has a development and shipping scaffold; product task protocols remain planned. `VISION.md` defines the product, and `RATIONALE.md` explains its focus: `optional input -> task function -> output`, executed on the owner's machine for browser-only recipients.
+Runlink has a development and shipping scaffold and a local proof of concept of sharing a task. `VISION.md` defines the product, and `RATIONALE.md` explains its focus: `optional input -> task function -> output`, executed on the owner's machine for browser-only recipients.
 
 - `architecture/README.md`: component overview, state ownership, and runtime flow.
 - `architecture/adr/`: numbered architecture decision records (ADRs).
 - `architecture/implementation.md`: build sequence, required proofs, and unresolved choices.
 
-The Go layout is `cmd/runlink`, `cmd/runlink-server`, the development-only `cmd/runlink-dev`, and shared `internal/` packages; `internal/devstack` runs the local stack (ADR 0008). Browser assets live in `internal/frontend/assets` as HTML, CSS, and vanilla JavaScript. `scripts/` owns the shared gate and release tooling; `infra/` contains OpenTofu, mocked tests, and cloud-init templates. `docs/` records actual development commands, operational steps, and verification limits.
+The Go layout is `cmd/runlink`, `cmd/runlink-server`, the development-only `cmd/runlink-dev`, and shared `internal/` packages; `internal/devstack` runs the local stack (ADR 0008). Browser assets live in `internal/frontend/assets` as HTML, CSS, and vanilla JavaScript. `examples/` holds task files for manual tests; `scripts/` owns the shared gate and release tooling; `infra/` contains OpenTofu, mocked tests, and cloud-init templates. `docs/` records actual development commands, operational steps, and verification limits.
 
 ## Build, Test, and Development Commands
 

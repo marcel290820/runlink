@@ -1,0 +1,12 @@
+{
+  "title": "Greet someone",
+  "description": "Writes a greeting on the owner's machine.",
+  "command": ["./greet.sh", "{name}", "{tone}"],
+  "inputs": [
+    { "name": "name", "type": "text", "label": "Name", "required": true, "maxLength": 60 },
+    { "name": "tone", "type": "choice", "label": "Tone", "options": ["warm", "formal"], "default": "warm" }
+  ],
+  "output": { "kind": "text", "label": "a greeting" },
+  "progress": true,
+  "timeout": 10
+}

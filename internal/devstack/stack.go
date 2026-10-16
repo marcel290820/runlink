@@ -106,6 +106,8 @@ func Start(ctx context.Context, c Config, logger *slog.Logger) (*Stack, error) {
 
 	app := server.DefaultConfig()
 	app.Listen, app.StateDir = appListener.Addr().String(), filepath.Join(c.StateDir, "app")
+	app.TURNURIs = []string{"stun:" + turnAddr.String(), "turn:" + turnAddr.String() + "?transport=udp", "turn:" + turnAddr.String() + "?transport=tcp"}
+	app.TURNSecretFile = filepath.Join(c.StateDir, "turn-secret")
 	frontend := server.DefaultConfig()
 	frontend.Role, frontend.Listen, frontend.StateDir = server.RoleFrontend, frontendListener.Addr().String(), ""
 	frontend.Upstream = "http://" + app.Listen
@@ -115,7 +117,7 @@ func Start(ctx context.Context, c Config, logger *slog.Logger) (*Stack, error) {
 		Frontend:   "http://" + frontend.Listen,
 		App:        frontend.Upstream,
 		TURN:       turnAddr.String(),
-		TURNURIs:   []string{"stun:" + turnAddr.String(), "turn:" + turnAddr.String() + "?transport=udp", "turn:" + turnAddr.String() + "?transport=tcp"},
+		TURNURIs:   app.TURNURIs,
 		TURNSecret: secret,
 		turn:       turn,
 		cancel:     cancel,

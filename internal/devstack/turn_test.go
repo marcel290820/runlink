@@ -11,6 +11,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,6 +21,11 @@ import (
 
 	"github.com/pion/turn/v4"
 )
+
+// The secret file format C's startup helper accepts, spelled independently of B.
+const maxSecretFile = 4096
+
+var secretFormat = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // restCredential computes coturn's TURN REST credential independently of Pion,
 // as scripts/turn-check.py does for the real server.

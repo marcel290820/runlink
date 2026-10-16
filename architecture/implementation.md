@@ -2,7 +2,7 @@
 
 [Architecture overview and ADR index](README.md)
 
-The [local foundation](../README.md) now supplies both executables, the loader/GUI asset boundary, shared checks, hosted CI configuration, three-server infrastructure, and signed release/deployment tooling. See [verification](../docs/verification.md) for executed checks and limits. Product transport, authentication, registry, task execution, recovery, and supervision remain planned. Complete each proof before broadening scope. ADRs record the design; this page tracks the work needed to deliver it.
+The [local foundation](../README.md) now supplies both executables, the loader/GUI asset boundary, shared checks, hosted CI configuration, three-server infrastructure, and signed release/deployment tooling. The local proof of concept adds signaling, TURN credentials, `runlink share`, WebRTC with peer authentication ([ADR 0009](adr/0009-poc-signaling-and-peer-authentication.md)), and one task run end to end. See [verification](../docs/verification.md) for executed checks and limits. The durable registry, recovery, and supervision remain planned. Complete each proof before broadening scope. ADRs record the design; this page tracks the work needed to deliver it.
 
 [ADR 0008](adr/0008-local-first-proof-of-concept.md) puts a local proof of concept first: the whole product runs on one machine on the [local stack](../docs/development.md#local-stack), and the [external setup](../docs/operations.md#external-setup-in-order) waits until the idea is validated.
 
@@ -20,15 +20,20 @@ The [local foundation](../README.md) now supplies both executables, the loader/G
 
 The local stack supplies the frontend, app, and a TURN stand-in on loopback, the
 owner CLI's service origin, and in-process stacks for tests. The proof of concept
-adds product code in this order, each with its local check:
+added product code in this order, each with its local check, all passing:
 
 | Work | Where it plugs in | Local proof |
 | --- | --- | --- |
-| Registration and signaling | New fixed WSS routes on B; A forwards them only after their [ingress checks](adr/0003-trusted-browser-client.md#ingress-and-executable-content) land | Go test against `devstack.Start`: an owner registers and a second peer exchanges offers through A |
-| TURN credential issuance | B reads the shared secret file and TURN URIs from its configuration; `devstack` passes `var/dev/turn-secret` and the stand-in's URIs | Issued credentials allocate relays on the stand-in; expired or forged ones fail |
-| Sharing from the CLI | The CLI resolves its origin as `runlink status` does and prints `{origin}/{uuid}#{secret}` | The printed link opens the loader on the local frontend |
-| WebRTC and authentication | Pion in the runner, `RTCPeerConnection` in the GUI, ICE servers from B | Chromium end-to-end test over direct and `iceTransportPolicy: 'relay'` paths |
-| One task | Runner executes the fixed command; the loader verifies the owner-served GUI | Chromium end-to-end test completes a task and shows its result |
+| Registration and signaling | Two WebSocket routes on B; A terminates and relays them with the [ingress checks](adr/0003-trusted-browser-client.md#ingress-and-executable-content) | Go tests through A and B: registration, offer and answer, declines, owner loss, capacity, shutdown, and a hostile B confined to small JSON |
+| TURN credential issuance | B reads the shared secret file and TURN URIs from its configuration; `devstack` passes `var/dev/turn-secret` and the stand-in's URIs | Issued credentials verify independently; Chromium allocates relays with them; expired or forged ones fail |
+| Sharing from the CLI | `runlink share` resolves its origin as `runlink status` does and prints `{origin}/{uuid}#{secret}` | The printed link opens the task in Chromium |
+| WebRTC and authentication | Pion in the runner, `RTCPeerConnection` in the loader, ICE servers from B | Chromium end to end over direct and `iceTransportPolicy: 'relay'` paths; Go tests refuse wrong secrets, other tasks, relayed peers, and replayed proofs |
+| One task | Runner validates input, receives files, and executes the fixed command; the loader verifies the owner-served GUI | Chromium completes [examples/greet.json](../examples/greet.json) with progress and result and [examples/sort.json](../examples/sort.json) with a file in and out; Go tests cover validation, uploads, timeouts, oversized output, and stopping |
+
+Step 1's exit condition is met locally except the [durable registry](adr/0004-bounded-task-registry.md):
+both sharing modes, direct and forced-relay paths, UUID-only access, replay, and
+substituted peers are tested, and an established session keeps running after A, B,
+and the TURN stand-in stop.
 
 ## Required proofs
 
@@ -52,8 +57,8 @@ These are acceptance criteria for future implementation, not tests that have alr
 
 | Resolve before | Implementation choice / proof still needed |
 | --- | --- |
-| Authentication implementation | Reviewed browser/Go protocol and libraries for secret possession, task/peer binding, freshness, and reconnect |
+| Authentication implementation | Independent review of [ADR 0009](adr/0009-poc-signaling-and-peer-authentication.md) and both implementations; reconnect after a dropped session |
 | Public registration | Owner enrollment/recovery; numeric per-owner/global registry caps, cleanup bounds, and reserved storage headroom |
 | Public connectivity test | VM sizing, fixed ingress rules, coturn addressing/certificates/listener and relay ports, credential lifetimes, abuse limits, and firewall enforcement of the relay exception |
-| Real script execution | Exact `task.json` and versioned message schema; numeric input/output/time/retention limits; run-ID acceptance lifetime and deduplication retention; durable record format; supervisor handoff, identity, and reconciliation on both platforms |
+| Real script execution | Resumable file transfer; whether the minimal [task file](../docs/tasks.md) and the `runlink-auth-v1` messages need versioning; retention limits; run-ID acceptance lifetime and deduplication retention; durable record format; supervisor handoff, identity, and reconciliation on both platforms |
 | Public release | Supported browser/platform matrix, GUI version withdrawal/update policy, and signed release verification details |

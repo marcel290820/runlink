@@ -5,13 +5,16 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
+
+	"github.com/coder/websocket"
 
 	"runlink/internal/frontend"
 )
 
-// statusPath is the only API route, and the only one A forwards to B. WSS and
-// other product routes stay closed until their protocols and boundary checks exist.
+// statusPath is the only plain API route. A forwards it and the signaling
+// WebSocket routes to B; every other route stays closed.
 const statusPath = "/api/v1/status"
 
 const maxUpstreamBody = 64 << 10
@@ -27,7 +30,8 @@ var relayedStatuses = map[int]bool{
 }
 
 // frontendRoutes are A's fixed routes. upstream must already be validated.
-func frontendRoutes(upstream string) http.HandlerFunc {
+// Cancelling ctx closes relayed signaling connections.
+func frontendRoutes(ctx context.Context, upstream string) http.HandlerFunc {
 	client := &http.Client{
 		Transport: &http.Transport{
 			Proxy:                  nil, // B is private; never reach it through a proxy
@@ -47,6 +51,8 @@ func frontendRoutes(upstream string) http.HandlerFunc {
 			writeError(w, http.StatusBadRequest, "query_not_allowed")
 		case r.URL.Path == statusPath:
 			relayStatus(r.Context(), w, client, statusURL)
+		case signalRoute(r.URL.Path):
+			relaySignal(ctx, w, r, client, "ws"+strings.TrimPrefix(upstream, "http")+r.URL.Path)
 		default:
 			serveAsset(w, r.URL.Path)
 		}
@@ -79,6 +85,54 @@ func relayStatus(ctx context.Context, w http.ResponseWriter, client *http.Client
 	}
 	w.WriteHeader(res.StatusCode)
 	_, _ = w.Write(body)
+}
+
+// relaySignal opens the same signaling route on B, then accepts the client's
+// WebSocket and relays bounded JSON text messages both ways. Neither side sees
+// the other's handshake headers, and B can send nothing but small JSON.
+func relaySignal(ctx context.Context, w http.ResponseWriter, r *http.Request, client *http.Client, url string) {
+	dialCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	upstream, _, err := websocket.Dial(dialCtx, url, &websocket.DialOptions{HTTPClient: client})
+	cancel()
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "upstream_unavailable")
+		return
+	}
+	defer upstream.CloseNow()
+	conn, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.CloseNow()
+	// The first direction to end, including by shutdown, ends both. A close
+	// handshake passes on to the other side.
+	ctx, cancel = context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		relay(ctx, conn, upstream)
+		cancel()
+	}()
+	relay(ctx, upstream, conn)
+	cancel()
+	<-done
+}
+
+// relay passes small JSON text messages from one side to the other until either
+// fails, then closes the other side with from's close status, if it sent one.
+func relay(ctx context.Context, from, to *websocket.Conn) {
+	// Room for the ICE servers B adds to an offer it forwards.
+	from.SetReadLimit(2 * maxSignalMessage)
+	for {
+		kind, data, err := from.Read(ctx)
+		if status := websocket.CloseStatus(err); status != -1 {
+			_ = to.Close(status, "")
+		}
+		if err != nil || kind != websocket.MessageText || !json.Valid(data) || to.Write(ctx, websocket.MessageText, data) != nil {
+			return
+		}
+	}
 }
 
 func serveAsset(w http.ResponseWriter, path string) {

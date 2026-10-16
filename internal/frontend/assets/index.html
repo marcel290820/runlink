@@ -5,11 +5,9 @@
 <script>(() => {
   let secret = location.hash.slice(1);
   history.replaceState(null, '', location.pathname + location.search);
-  // Authentication will consume this once; neither secrets nor task data are persisted.
+  // The loader takes this once; neither secrets nor task data are persisted.
   window.runlinkSession = Object.freeze({
-    capture(value) { secret = value; },
-    consume() { const value = secret; secret = ''; return value; },
-    present() { return secret.length > 0; }
+    consume() { const value = secret; secret = ''; return value; }
   });
 })();</script>
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -17,8 +15,8 @@
 <title>Runlink</title>
 <link rel="preload" href="/assets/archivo.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/assets/martian-mono.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/assets/style.css" integrity="sha256-FxU9v01je9yE9lIikVdGAE48/qYerNfgdxc85oJ/U1E=">
-<script type="module" src="/assets/loader.mjs" integrity="sha256-5lJxU+YB6Nakw5wL1TVytODmU+T/Jn8a6BYlrvzwuAo="></script>
+<link rel="stylesheet" href="/assets/style.css" integrity="sha256-iwNYR1MGSRKB69M44N03niveHDmt3xTJA4SU+Y2Is64=">
+<script type="module" src="/assets/loader.mjs" integrity="sha256-7iCCS/Z1sIuasCLHIEYyXoDlJXjbryrg5rcdwnx2R/g="></script>
 </head>
 <body>
 <div class="view" id="gate-view">
@@ -36,6 +34,7 @@
 <input id="secret" class="control" type="password" placeholder="Paste the secret" autocomplete="off" spellcheck="false" maxlength="256" aria-describedby="secret-error">
 <button class="primary" type="submit">Connect</button>
 </form>
+<button id="retry" class="primary" type="button" hidden>Try again</button>
 </div>
 <span class="wire" aria-hidden="true"></span>
 <span class="end" aria-hidden="true">Owner's machine</span>

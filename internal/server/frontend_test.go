@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,7 +16,7 @@ import (
 const taskURL = "/12345678-1234-1234-1234-123456789abc"
 
 func frontendHandler(upstream string) http.Handler {
-	return Handler(frontendConfig(upstream), new(atomic.Bool))
+	return Handler(context.Background(), frontendConfig(upstream), new(atomic.Bool))
 }
 
 // hostileUpstream answers every request with status and body, plus headers that

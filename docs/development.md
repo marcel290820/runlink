@@ -61,7 +61,9 @@ TURN's IPv4 because Pion relays IPv4 only, and port 0 picks a free port.
 Development builds of the owner CLI target `http://127.0.0.1:8080`; release
 builds stamp `https://runlink.dev`. `RUNLINK_SERVICE` overrides either, with plain
 HTTP accepted only for a loopback IP. `build/runlink status` checks the status
-route through A.
+route through A, and `build/runlink share examples/greet.json` shares the example
+task ([Sharing a task](tasks.md)). B issues coturn TURN REST credentials for the
+stand-in from `var/dev/turn-secret`, so recipients and the runner can relay through it.
 
 The stand-in accepts coturn's TURN REST credentials, as B will issue them. For
 manual tests, mint one and force the relay path with
@@ -101,6 +103,10 @@ build/runlink-server --role frontend --listen 127.0.0.1:8080 \
   --upstream http://127.0.0.1:8081
 ```
 
+The app role also accepts `turn_uris`, the `stun:`/`turn:`/`turns:` URIs handed to
+peers, and `turn_secret_file`, the private file holding C's shared secret; set both
+or neither. Without them, B hands out no ICE servers.
+
 The file must contain one JSON object, at most 64 KiB, with only known fields.
 Roles are `app` and `frontend`; listeners require explicit IPs and valid ports.
 Plain HTTP and app listeners are restricted to loopback/private addresses. Public
@@ -130,8 +136,8 @@ data, and request-path errors are excluded.
 
 The server binary embeds the served assets with `go:embed`. The trusted frontend
 serves only `/`, lowercase UUID task paths, and the exact loader, style, manifest,
-and two font routes. The GUI bundle is neither embedded nor served by A. The future
-authenticated owner transport will embed it in the owner binary and deliver it.
+and two font routes. A never serves the GUI bundle; the owner CLI embeds it and
+sends it over the authenticated peer connection.
 
 The first inline script captures a fragment in memory and clears the current URL
 and history state before the module loader starts. Separately entered secrets are
@@ -140,8 +146,12 @@ code persists those values. `mountGUI(bytes, task)` verifies the complete bytes
 against the loader's generated approved SHA-256 list before creating executable
 content. The GUI registers `runlinkGUI`, and the loader hands it the task object;
 the header of [gui.js](../internal/frontend/assets/gui.js) documents the task
-definition and the run contract the transport must provide. Tests call the mount
-function directly with a fake task; there is no production connection path yet.
+definition and the run contract the loader's transport provides. The loader
+signals through A, connects to the owner's runner over WebRTC, and authenticates
+it as [ADR 0009](../architecture/adr/0009-poc-signaling-and-peer-authentication.md)
+describes before accepting the GUI. It keeps the secret in module memory until
+then and reports a missing owner, a refused secret, an incomplete link, an
+unreachable machine, or an unapproved GUI on the gate.
 
 `assets.py` fills `internal/frontend/loader.template.mjs` with the GUI approval
 and `internal/frontend/index.template.html` with the inline capture script and SRI
@@ -169,11 +179,14 @@ fonttools varLib.instancer 'MartianMono[wdth,wght].ttf' wght=400:700 wdth=87.5:1
 pyftsubset martian.ttf --unicodes="$U" --layout-features+=zero,case --flavor=woff2 --output-file=martian-mono.woff2
 ```
 
-The sole forwarded API is `GET /api/v1/status`. A forwards no recipient headers,
-cookies, query, or body. It accepts bounded JSON and a small status allowlist,
-discards every upstream header, and supplies JSON MIME, nosniff, sandbox CSP,
-no-referrer, and no-store headers independently. Unknown routes and all upgrades
-remain closed. WSS must receive its own boundary checks when implemented.
+A forwards `GET /api/v1/status` and the two signaling WebSockets, `/api/v1/share`
+and `/api/v1/connect/{uuid}`. For status, A forwards no recipient headers, cookies,
+query, or body. It accepts bounded JSON and a small status allowlist, discards
+every upstream header, and supplies JSON MIME, nosniff, sandbox CSP, no-referrer,
+and no-store headers independently. For signaling, A opens the route on B first,
+then accepts the client's WebSocket itself and relays only JSON text messages up to
+64 KiB; neither side sees the other's handshake headers, and a closed B yields A's
+JSON 502. Unknown routes and every other upgrade remain closed.
 
 ## Shared checks and CI
 
@@ -182,7 +195,8 @@ The same `scripts/check.sh` runs locally and on standard `ubuntu-26.04` and
 JavaScript/Python syntax, workflow YAML/action pins, Go vet, race-enabled behavioral
 tests, both builds, actual CLI behavior, config-file overrides, frontend-to-app
 relay and SIGTERM shutdown, the local stack and Chromium WebRTC through its TURN
-stand-in, Chromium browser behavior,
+stand-in, sharing a task with the built CLI and completing it in Chromium,
+Chromium browser behavior,
 OpenTofu and rendered configuration, loopback coturn UDP/TCP/TLS, local release lifecycle, Go vulnerabilities,
 Node advisories, and whitespace.
 

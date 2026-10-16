@@ -23,6 +23,11 @@ var (
 	archivo []byte
 	//go:embed assets/martian-mono.woff2
 	martianMono []byte
+
+	// GUI is the approved task interface. The owner CLI sends it over the
+	// authenticated peer connection; A never serves it.
+	//go:embed assets/gui.js
+	GUI []byte
 )
 
 // CSP admits exactly the page's inline capture script and the loader module. The
@@ -34,13 +39,14 @@ var CSP = "default-src 'none'; " +
 	"style-src 'self'; font-src 'self'; img-src blob:; connect-src 'self'; base-uri 'none'; object-src 'none'; frame-ancestors 'none'; worker-src 'none'; " +
 	"require-trusted-types-for 'script'; trusted-types runlink-gui"
 
-var taskPath = regexp.MustCompile(`^/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+// TaskPath matches a task URL path, a slash and a lowercase UUID.
+var TaskPath = regexp.MustCompile(`^/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 
 // Asset returns the file behind one of A's fixed public routes. Every other path
 // stays closed; the GUI bundle is never served here.
 func Asset(path string) (data []byte, contentType string, ok bool) {
 	switch {
-	case path == "/" || taskPath.MatchString(path):
+	case path == "/" || TaskPath.MatchString(path):
 		return index, "text/html; charset=utf-8", true
 	case path == "/assets/loader.mjs":
 		return loader, "text/javascript; charset=utf-8", true

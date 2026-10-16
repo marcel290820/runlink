@@ -35,7 +35,7 @@ func TestStatusThroughLocalStack(t *testing.T) {
 		}
 	})
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"status"}, env(stack.Frontend), &stdout, &stderr); code != 0 || stdout.String() != stack.Frontend+": scaffold\n" {
+	if code := run(t.Context(), []string{"status"}, env(stack.Frontend), &stdout, &stderr); code != 0 || stdout.String() != stack.Frontend+": scaffold\n" {
 		t.Fatalf("exit %d, stdout %q, stderr %q", code, stdout.String(), stderr.String())
 	}
 }
@@ -82,7 +82,7 @@ func TestStatusRejectsUnexpectedResponses(t *testing.T) {
 	} {
 		upstream := httptest.NewServer(handler)
 		var stdout, stderr bytes.Buffer
-		if code := run([]string{"status"}, env(upstream.URL), &stdout, &stderr); code != 1 || stdout.Len() != 0 ||
+		if code := run(t.Context(), []string{"status"}, env(upstream.URL), &stdout, &stderr); code != 1 || stdout.Len() != 0 ||
 			!strings.Contains(stderr.String(), "unexpected response") {
 			t.Errorf("%s: exit %d, stdout %q, stderr %q", name, code, stdout.String(), stderr.String())
 		}
@@ -90,7 +90,7 @@ func TestStatusRejectsUnexpectedResponses(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	if code := run([]string{"status"}, env("http://127.0.0.1:1"), &stdout, &stderr); code != 1 ||
+	if code := run(t.Context(), []string{"status"}, env("http://127.0.0.1:1"), &stdout, &stderr); code != 1 ||
 		!strings.Contains(stderr.String(), "start the local stack with scripts/dev.sh") {
 		t.Fatalf("unreachable: exit %d, stderr %q", code, stderr.String())
 	}

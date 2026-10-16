@@ -1,6 +1,6 @@
 # Runlink architecture
 
-Product design target. The [development and shipping foundation](../README.md) is implemented; task protocols remain unimplemented. [VISION](../VISION.md) and [RATIONALE](../RATIONALE.md) define the product: `optional input -> task function -> output`, with execution on the owner's machine.
+Product design target. The [development and shipping foundation](../README.md) and a local proof of concept of the publish, connect, and run flow are implemented; recovery, supervision, and the durable registry are not. [VISION](../VISION.md) and [RATIONALE](../RATIONALE.md) define the product: `optional input -> task function -> output`, with execution on the owner's machine.
 
 ## Documentation structure
 
@@ -24,6 +24,7 @@ Decisions live in `adr/NNNN-short-title.md`, using Status, Context, Decision, an
 | [0006](adr/0006-hetzner-deployment.md) | Separate frontend, application, and TURN servers on Hetzner | Accepted |
 | [0007](adr/0007-local-shipping-foundation.md) | Locally verified tooling, trusted ingress, and signed deployment foundation | Accepted |
 | [0008](adr/0008-local-first-proof-of-concept.md) | Local-first proof of concept with infrastructure stand-ins | Accepted |
+| [0009](adr/0009-poc-signaling-and-peer-authentication.md) | Proof-of-concept signaling and peer authentication | Accepted; review pending |
 
 ## Container view
 

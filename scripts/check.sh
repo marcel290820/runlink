@@ -13,7 +13,7 @@ python3 scripts/assets.py --check
 python3 scripts/docs-check.py
 unformatted=$(gofmt -l cmd internal)
 [[ -z $unformatted ]] || { printf 'Run gofmt on:\n%s\n' "$unformatted" >&2; exit 1; }
-shellcheck scripts/*.sh
+shellcheck scripts/*.sh examples/*.sh
 for script in scripts/*.mjs internal/frontend/*.mjs internal/frontend/assets/*.mjs internal/frontend/assets/*.js; do
   node --check "$script"
 done
@@ -25,9 +25,11 @@ actionlint
 go vet ./...
 go test -race -count=1 ./...
 scripts/build.sh
-# Development stand-ins never reach the shipped executables (ADR 0008).
-if go list -deps ./cmd/runlink ./cmd/runlink-server | grep -E '^(runlink/internal/devstack|github\.com/pion/)'; then
-  printf 'Shipped executables must not import the local stack\n' >&2
+# Development stand-ins never reach the shipped executables (ADR 0008), and the
+# servers link no WebRTC: only the owner CLI is a peer.
+if go list -deps ./cmd/runlink ./cmd/runlink-server | grep -E '^runlink/internal/devstack$' ||
+  go list -deps ./cmd/runlink-server | grep -E '^github\.com/pion/'; then
+  printf 'Shipped executables must not import the local stack, nor the servers Pion\n' >&2
   exit 1
 fi
 
