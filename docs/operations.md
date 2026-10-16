@@ -93,17 +93,19 @@ these steps; see the [local stack](development.md#local-stack).
    --standalone --preferred-challenges http --non-interactive --agree-tos
    --email OPERATOR_EMAIL -d LOADER_DOMAIN` after DNS and TCP 80 are reachable.
    Deploy the signed Linux amd64 release to A and B without restarting A yet.
+   Generate a new random 32-byte TURN shared secret as 64 lowercase hex characters
+   and install it as `/etc/runlink/turn-secret` on B, root-owned, mode `0600`; B's
+   unit loads it as a systemd credential and issues TURN credentials for C's
+   listeners from it.
    Run `/etc/letsencrypt/renewal-hooks/deploy/runlink-tls` on A to install restricted
    certificate copies and start/restart `runlink-frontend`; use Go HTTPS on port 443.
    Start B's `runlink-app` unit. Test HTTPS smoke after A starts.
 6. On C, obtain its certificate using the same standalone certbot command with
-   `TURN_DOMAIN`. Supply a new random 32-byte shared secret as 64 lowercase hex
-   characters in `/etc/runlink/turn-secret`, root-owned, group `runlink`, mode `0640`.
+   `TURN_DOMAIN`. Install the same secret as `/etc/runlink/turn-secret` on C,
+   root-owned, group `runlink`, mode `0640`.
    Run `/etc/letsencrypt/renewal-hooks/deploy/runlink-tls` on C to install restricted
-   certificate copies and start/restart `runlink-turn`. B issues TURN credentials from
-   the same secret: give it a root-owned `0600` copy through systemd `LoadCredential=`
-   and set `turn_uris` and `turn_secret_file` in its `server.json`, which the
-   infrastructure templates do not render yet. On both A and C, enable/verify the certbot renewal timer and test renewal.
+   certificate copies and start/restart `runlink-turn`. On both A and C,
+   enable/verify the certbot renewal timer and test renewal.
    `/etc/letsencrypt` holds persistent ACME state; `/etc/runlink/tls` holds the restricted
    runtime copies. TCP 80 is reserved for issuance/renewal, not an application listener.
 7. Confirm A's public HTTPS and health/readiness; confirm B:8081 is reachable only
@@ -128,7 +130,7 @@ these steps; see the [local stack](development.md#local-stack).
 | Server | Runtime and persistent paths | Network |
 | --- | --- | --- |
 | A | `runlink` trusted Go HTTPS frontend; `/opt/runlink/releases`, `/etc/letsencrypt`, restricted `/etc/runlink/tls` | Public TCP 443; TCP 80 for certificate renewal; fixed API to B |
-| B | `runlink` app; reserved private `/var/lib/runlink` | Private 8081 from A; administrator SSH only publicly |
+| B | `runlink` app; reserved private `/var/lib/runlink`; root-only `/etc/runlink/turn-secret`, loaded as a systemd credential | Private 8081 from A; administrator SSH only publicly |
 | C | `runlink` coturn UID 980; `/etc/runlink/turn-secret`, restricted TLS copies; `/var/lib/runlink-turn`; SQLite state in `/var/lib/runlink-turn/turn.sqlite`; PID and generated config in `/run/runlink-turn` | UDP/TCP 3478, TCP TLS 5349, UDP relay 49160–49259; TCP 80 for certificate renewal |
 
 TURN is bounded to 100 allocations, four per credential username, ten-minute

@@ -1,5 +1,5 @@
 [Unit]
-Description=Runlink ${role == "a" ? "trusted frontend" : "application scaffold"}
+Description=Runlink ${role == "a" ? "trusted frontend" : "application server"}
 Wants=network-online.target
 After=network-online.target nftables.service
 ConditionPathExists=/opt/runlink/current/bin/runlink-server
@@ -12,6 +12,9 @@ ConditionPathExists=/etc/runlink/tls/privkey.pem
 User=runlink
 Group=runlink
 ExecStart=/opt/runlink/current/bin/runlink-server --config /etc/runlink/server.json
+%{ if role == "b" ~}
+LoadCredential=turn-secret:/etc/runlink/turn-secret
+%{ endif ~}
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=15

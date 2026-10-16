@@ -51,8 +51,15 @@ run "three_server_stack" {
     error_message = "Protect the new stack against accidental deletion/rebuild."
   }
   assert {
-    condition     = strcontains(hcloud_server.runlink["c"].user_data, "meta skuid") && length([for file in local.cloud_config.c.write_files : file if file.path == "/etc/runlink/turn-secret"]) == 0
+    condition     = strcontains(hcloud_server.runlink["c"].user_data, "meta skuid") && alltrue([for role in ["b", "c"] : length([for file in local.cloud_config[role].write_files : file if file.path == "/etc/runlink/turn-secret"]) == 0])
     error_message = "Enforce the TURN UID boundary and keep shared secrets out of cloud state."
+  }
+}
+run "app_issues_turn_credentials" {
+  command = apply
+  assert {
+    condition     = strcontains(hcloud_server.runlink["b"].user_data, "LoadCredential=turn-secret:/etc/runlink/turn-secret") && strcontains(hcloud_server.runlink["b"].user_data, "turns:turn.runlink.dev:5349?transport=tcp")
+    error_message = "B must load the TURN secret as a systemd credential and issue credentials for C's listeners."
   }
 }
 run "reject_public_ssh" {

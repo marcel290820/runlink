@@ -58,7 +58,12 @@ locals {
     b = {
       packages = []
       files = [
-        { path = "/etc/runlink/server.json", permissions = "0644", content = jsonencode({ role = "app", listen = "${local.private_ips.b}:8081", state_dir = "/var/lib/runlink" }) },
+        { path = "/etc/runlink/server.json", permissions = "0644", content = jsonencode({
+          role = "app", listen = "${local.private_ips.b}:8081", state_dir = "/var/lib/runlink",
+          # C's coturn listeners; B signs their credentials with the secret its unit loads.
+          turn_uris        = ["stun:${var.turn_domain}:3478", "turn:${var.turn_domain}:3478?transport=udp", "turn:${var.turn_domain}:3478?transport=tcp", "turns:${var.turn_domain}:5349?transport=tcp"]
+          turn_secret_file = "/run/credentials/runlink-app.service/turn-secret"
+        }) },
         { path = "/etc/systemd/system/runlink-app.service", permissions = "0644", content = templatefile("${path.module}/templates/runlink.service.tftpl", local.template_vars.b) },
       ]
     }
