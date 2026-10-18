@@ -61,24 +61,11 @@
 
   const icon = name => svg('svg', { class: 'icon', viewBox: '0 0 24 24', 'aria-hidden': 'true' }, svg('path', { d: ICONS[name] }));
 
-  // The machine's signal, drawn across the box on wide screens and down its rail on
-  // narrow ones. It repeats every 240 units, so sliding it one period loops seamlessly.
-  function waves() {
-    let across = '', down = '';
-    for (let x = 0; x <= 480; x += 3) {
-      const t = x / 240 * 2 * Math.PI;
-      const y = (45 + 16 * (0.6 * Math.sin(4 * t) + 0.28 * Math.sin(10 * t + 1) + 0.12 * Math.sin(2 * t))).toFixed(1);
-      across += `${x ? 'L' : 'M'}${x} ${y}`;
-      down += `${x ? 'L' : 'M'}${y} ${x}`;
-    }
-    const wave = (axis, viewBox, d) => svg('svg', { class: `wave ${axis}`, viewBox, preserveAspectRatio: 'none' },
-      svg('g', { class: 'trace' }, svg('path', { d })));
-    return [wave('h', '0 0 240 90', across), wave('v', '0 0 90 240', down)];
-  }
-
+  // The helix that the page draws on its canvas, as a two-strand mark.
   function brand() {
-    const mark = svg('svg', { class: 'mark', viewBox: '0 0 30 12', 'aria-hidden': 'true' },
-      svg('path', { d: 'M10 6h10' }), svg('circle', { cx: 6, cy: 6, r: 4 }), svg('circle', { cx: 24, cy: 6, r: 4 }));
+    const mark = svg('svg', { class: 'mark', viewBox: '0 0 30 16', 'aria-hidden': 'true' },
+      svg('path', { class: 'pair', d: 'M4.5 5.5v5M15 5v6M25.5 5.5v5' }),
+      svg('path', { d: 'M1 3C8 3 8 13 15 13S22 3 29 3M1 13C8 13 8 3 15 3S22 13 29 13' }));
     return el('span', { class: 'brand' }, mark, el('span', {}, 'run', el('b', { text: 'link' })));
   }
 
@@ -415,10 +402,11 @@
     const readout = el('p', { class: 'readout', text: 'Ready' });
     const caption = el('p', { class: 'caption', text: 'Waiting for your input' });
     const log = el('ol', { class: 'log' });
-    const [across, down] = waves();
+    // The page's helix runs through the signal band and along both wires, and reads the
+    // run from the bench's data-stage, data-fault, data-beat, and --progress.
     const machineNode = el('section', { class: 'machine', 'aria-labelledby': 'machine-heading' },
       el('div', { class: 'readings' }, el('h2', { class: 'who', id: 'machine-heading', text: upper(machine) }), readout, caption, log),
-      el('div', { class: 'signal', 'aria-hidden': 'true' }, across, down));
+      el('div', { class: 'signal', 'data-helix': 'core', 'aria-hidden': 'true' }));
 
     const expect = () => el('div', { class: 'expect' },
       el('strong', {}, icon(kindIcon), noun ? `You'll get ${noun}` : "You'll see when it's done"),
@@ -431,9 +419,9 @@
       el('h1', { class: 'title', text: definition.title }),
       definition.description ? el('p', { class: 'desc', text: definition.description }) : null,
       form,
-      el('div', { class: 'wire w1', 'aria-hidden': 'true' }, el('i', { class: 'packet' })),
+      el('div', { class: 'wire w1', 'data-helix': 'link', 'aria-hidden': 'true' }),
       machineNode,
-      el('div', { class: 'wire w2', 'aria-hidden': 'true' }, el('i', { class: 'fill' }), el('i', { class: 'head' })),
+      el('div', { class: 'wire w2', 'data-helix': 'link', 'aria-hidden': 'true' }),
       output);
     const linked = el('span');
     const link = up => linked.replaceChildren(up ? 'Connected' : 'Disconnected', el('span', { class: 'to', text: ` ${up ? 'to' : 'from'} ${machine}` }));
@@ -447,7 +435,7 @@
     addEventListener('dragover', event => event.preventDefault());
     addEventListener('drop', event => event.preventDefault());
 
-    let busy = false, runs = 0, started = 0, timer = 0, spoken = 0, downloads = [];
+    let busy = false, runs = 0, started = 0, timer = 0, spoken = 0, beats = 0, downloads = [];
     // Leaving mid-run drops the live view and the session; ask first.
     addEventListener('beforeunload', event => { if (busy) event.preventDefault(); });
     const say = text => { live.textContent = text; spoken = Date.now(); };
@@ -463,6 +451,10 @@
       readout.textContent = big;
       readout.classList.toggle('time', time);
       caption.textContent = small;
+      if (motion.matches) {
+        readout.animate([{ opacity: 0, filter: 'blur(10px)', transform: 'translateY(.15em)' }, { opacity: 1, filter: 'blur(0)', transform: 'none' }],
+          { duration: 450, easing: 'cubic-bezier(.2, .7, .2, 1)' });
+      }
     };
     retitle('');
 
@@ -509,13 +501,10 @@
         say(`${upper(machine)} started the run.`);
       }
       if (typeof update.message === 'string' && update.message) {
-        log.append(el('li', { text: update.message }));
+        log.append(el('li', { 'data-t': clock(performance.now() - started), text: update.message }));
         while (log.children.length > 4) log.firstChild.remove();
-        if (motion.matches) {
-          const pulse = axis => [{ transform: `${axis}(1)` }, { transform: `${axis}(1.6)` }, { transform: `${axis}(1)` }];
-          across.firstChild.animate(pulse('scaleY'), { duration: 450, easing: 'ease-out' });
-          down.firstChild.animate(pulse('scaleX'), { duration: 450, easing: 'ease-out' });
-        }
+        // Each message sends a pulse down the helix.
+        bench.dataset.beat = String(++beats);
         if (Date.now() - spoken > 4000) say(update.message);
       }
       if (Number.isFinite(update.fraction)) {
@@ -589,7 +578,7 @@
       // Only a coded error carries a message the owner chose to show. It ends the run's log
       // and reads in full in the result.
       const detail = coded && typeof error.message === 'string' ? error.message.trim() : '';
-      if (detail) log.append(el('li', { class: 'bad', text: detail }));
+      if (detail) log.append(el('li', { class: 'bad', 'data-t': clock(elapsed), text: detail }));
       else if (['failed', 'timeout', 'stopped'].includes(code)) log.lastElementChild?.classList.add('bad');
       while (log.children.length > 4) log.firstChild.remove();
       show('failed', short, `After ${duration(elapsed)}`);

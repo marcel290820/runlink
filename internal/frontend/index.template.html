@@ -13,15 +13,15 @@
 </head>
 <body>
 <div class="view" id="gate-view">
-<header class="bar"><span class="brand"><svg class="mark" viewBox="0 0 30 12" aria-hidden="true"><path d="M10 6h10"/><circle cx="6" cy="6" r="4"/><circle cx="24" cy="6" r="4"/></svg><span>run<b>link</b></span></span></header>
+<header class="bar"><span class="brand"><svg class="mark" viewBox="0 0 30 16" aria-hidden="true"><path class="pair" d="M4.5 5.5v5M15 5v6M25.5 5.5v5"/><path d="M1 3C8 3 8 13 15 13S22 3 29 3M1 13C8 13 8 3 15 3S22 13 29 13"/></svg><span>run<b>link</b></span></span></header>
 <main class="gate" id="gate" data-state="opening">
 <h1 id="gate-title">Opening your link</h1>
 <p id="status" role="status">Getting the link ready.</p>
 <p class="about">Runlink runs a task on its owner's computer and shows you the result. There is nothing to install.</p>
 <div class="span">
 <span class="end" aria-hidden="true">You</span>
-<span class="wire" aria-hidden="true"></span>
-<div class="mid">
+<span class="wire" data-helix="link" aria-hidden="true"></span>
+<div class="mid" data-helix="gap">
 <form id="secret-form" class="secret" novalidate hidden>
 <label class="sr" for="secret">Link secret</label>
 <input id="secret" class="control" type="password" placeholder="Paste the secret" autocomplete="off" spellcheck="false" maxlength="256" aria-describedby="secret-error">
@@ -29,7 +29,7 @@
 </form>
 <button id="retry" class="primary" type="button" hidden>Try again</button>
 </div>
-<span class="wire" aria-hidden="true"></span>
+<span class="wire" data-helix="link" aria-hidden="true"></span>
 <span class="end" aria-hidden="true">Owner's machine</span>
 </div>
 <p class="error" id="secret-error"></p>
@@ -38,5 +38,6 @@
 <footer class="foot"><p id="note" hidden></p></footer>
 </div>
 <div id="task"></div>
+<canvas id="helix" aria-hidden="true" hidden></canvas>
 </body>
 </html>

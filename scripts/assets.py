@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Generate the trusted loader, page, and asset manifest from internal/frontend.
 
-loader.mjs embeds the approved GUI hash, index.html inlines the capture script
-and pins its stylesheet and loader with SRI, and manifest.json covers every
-asset. With --check, fail on stale output instead of rewriting it.
+loader.mjs embeds the approved GUI hash and the helix renderer, index.html
+inlines the capture script and pins its stylesheet and loader with SRI, and
+manifest.json covers every asset. With --check, fail on stale output instead of
+rewriting it.
 """
 import argparse
 import base64
@@ -33,7 +34,10 @@ def generate() -> dict[str, bytes]:
     """Return the expected bytes of every generated asset."""
     source = {path.name: path.read_bytes() for path in ASSETS.iterdir() if path.name not in GENERATED}
     approved = json.dumps([hashlib.sha256(source['gui.js']).hexdigest()])
-    loader = fill(FRONTEND / 'loader.template.mjs', {'/* APPROVED_GUI */': approved}).encode()
+    loader = fill(FRONTEND / 'loader.template.mjs', {
+        '/* APPROVED_GUI */': approved,
+        '/* HELIX */': (FRONTEND / 'helix.js').read_text(encoding='utf-8').rstrip('\n'),
+    }).encode()
     index = fill(FRONTEND / 'index.template.html', {
         '{{CAPTURE}}': source['capture.js'].decode().rstrip('\n'),
         '{{STYLE_INTEGRITY}}': integrity(source['style.css']),

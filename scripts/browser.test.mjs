@@ -165,6 +165,18 @@ try {
   }, gui);
   assert.deepEqual(mounted, { rejected: true, title: TASK.title, gate: true });
   assert.equal(await page.locator('#task img').count(), 0);
+  // The page's helix draws along the task's wires: a strip across the middle of the
+  // result-side wire holds its strands once the helix has unrolled. Nothing is drawn
+  // out of view, so the wire is scrolled in first.
+  await page.locator('.w2').scrollIntoViewIfNeeded();
+  await page.waitForFunction(() => {
+    const canvas = document.getElementById('helix'), wire = document.querySelector('.w2').getBoundingClientRect();
+    const box = canvas.getBoundingClientRect(), scale = canvas.width / box.width;
+    if (canvas.hidden || !canvas.width) return false;
+    const x = Math.round((wire.left + wire.width / 2 - box.left) * scale), y = Math.round((wire.top - box.top - 40) * scale);
+    const { data } = canvas.getContext('2d').getImageData(x - Math.round(20 * scale), y, Math.ceil(40 * scale), Math.ceil(80 * scale));
+    return data.filter((alpha, i) => i % 4 === 3 && alpha).length >= 60 * scale * scale;
+  });
 
   // Required input is checked before anything is sent.
   const calls = () => page.evaluate(() => window.calls.length);

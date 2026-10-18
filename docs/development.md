@@ -154,11 +154,19 @@ then and reports a missing owner, a refused secret, an incomplete link, an
 unreachable machine, or an unapproved GUI on the gate.
 
 `assets.py` fills `internal/frontend/loader.template.mjs` with the GUI approval
-and `internal/frontend/index.template.html` with the inline capture script and SRI
-hashes, then covers every asset in a deterministic manifest. The frontend computes
+and the helix renderer, and `internal/frontend/index.template.html` with the inline
+capture script and SRI hashes, then covers every asset in a deterministic manifest. The frontend computes
 its hash-based CSP from the embedded page's inline script and the loader bytes. Trusted Types permits only the loader's
 verified GUI object URL; the CSP disables workers, framing, base URL changes, and
 other executable sources. The GUI uses `textContent` and safe DOM creation.
+
+The page draws the link between the recipient and the owner's machine as a double
+helix of particles on its one canvas. [helix.js](../internal/frontend/helix.js),
+inlined into the loader, lays the helix along the elements marked `data-helix` and
+reads the run from the gate's `data-state` and `data-reason` or the task bench's
+`data-stage`, `data-fault`, `data-beat`, and `--progress`. It reads no field values
+and makes no requests. With reduced motion it draws a still picture that changes
+only with the state.
 
 The page sets interface text in Archivo and data in Martian Mono, vendored as WOFF2
 subsets that only A serves, under `font-src 'self'`. Both use the SIL Open Font
