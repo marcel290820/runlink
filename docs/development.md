@@ -168,7 +168,8 @@ reads the run from the gate's `data-state` and `data-reason` or the task bench's
 and makes no requests. With reduced motion it draws a still picture that changes
 only with the state.
 
-The page sets interface text in Archivo and data in Martian Mono, vendored as WOFF2
+The page sets its interface in Archivo, and what the owner's machine sends verbatim,
+its log and text results, in Martian Mono. Both are vendored as WOFF2
 subsets that only A serves, under `font-src 'self'`. Both use the SIL Open Font
 License 1.1 ([fonts-OFL.txt](../internal/frontend/fonts-OFL.txt)). They were built
 from the variable fonts in google/fonts at commit

@@ -35,6 +35,7 @@
     done: 'M5 12.5l4.5 4.5L19 7.5',
     download: 'M12 4v11M7 10l5 5 5-5M5 20h14',
     file: 'M6 3h8l4 4v14H6zM14 3v4h4',
+    key: 'M11 12.5 20 3.5M16.5 7l2.5 2.5M14 9.5l2 2M8 20.5a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9z',
     lock: 'M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5z',
     text: 'M5 6h14M5 10h14M5 14h10M5 18h7',
     upload: 'M12 16V5M7 10l5-5 5 5M5 20h14',
@@ -373,6 +374,8 @@
     const definition = task?.definition;
     validate(definition);
     if (typeof task.run !== 'function') throw new Error('Task cannot run');
+    // The log and text results are set in Martian Mono; fetch it now rather than at the first line.
+    document.fonts.load('1em "Martian Mono"');
 
     const owner = definition.owner?.trim() ?? '';
     const machine = owner ? `${owner}'s machine` : "the owner's machine";
@@ -402,14 +405,18 @@
     const readout = el('p', { class: 'readout', text: 'Ready' });
     const caption = el('p', { class: 'caption', text: 'Waiting for your input' });
     const log = el('ol', { class: 'log' });
+    // The meter's scale reads --progress; the percentage shows only once the run reports one.
+    const percent = el('span', { class: 'pct' });
     // The page's helix runs through the signal band and along both wires, and reads the
     // run from the bench's data-stage, data-fault, data-beat, and --progress.
     const machineNode = el('section', { class: 'machine', 'aria-labelledby': 'machine-heading' },
-      el('div', { class: 'readings' }, el('h2', { class: 'who', id: 'machine-heading', text: upper(machine) }), readout, caption, log),
+      el('div', { class: 'etch', 'aria-hidden': 'true' }),
+      el('div', { class: 'readings' }, el('h2', { class: 'who', id: 'machine-heading', text: upper(machine) }), readout, caption,
+        el('div', { class: 'meter', 'aria-hidden': 'true' }, el('span', { class: 'ticks' }), percent), log),
       el('div', { class: 'signal', 'data-helix': 'core', 'aria-hidden': 'true' }));
 
-    const expect = () => el('div', { class: 'expect' },
-      el('strong', {}, icon(kindIcon), noun ? `You'll get ${noun}` : "You'll see when it's done"),
+    const expect = () => el('div', { class: 'expect' }, icon(kindIcon),
+      el('strong', { text: noun ? `You'll get ${noun}` : "You'll see when it's done" }),
       el('span', { text: noun ? 'It lands here when the run finishes.' : "This task doesn't send anything back." }));
     const result = el('div', { class: 'result' }, expect());
     const output = el('section', { class: 'output', 'aria-labelledby': 'output-heading' },
@@ -424,13 +431,18 @@
       el('div', { class: 'wire w2', 'data-helix': 'link', 'aria-hidden': 'true' }),
       output);
     const linked = el('span');
-    const link = up => linked.replaceChildren(up ? 'Connected' : 'Disconnected', el('span', { class: 'to', text: ` ${up ? 'to' : 'from'} ${machine}` }));
+    const seal = el('p', { class: 'seal' }, icon('lock'), linked, el('span', { class: 'e2e', text: 'Encrypted end to end' }));
+    const link = up => {
+      seal.classList.toggle('down', !up);
+      linked.replaceChildren(up ? 'Connected' : 'Disconnected', el('span', { class: 'to', text: ` ${up ? 'to' : 'from'} ${machine}` }));
+    };
     link(true);
     const live = el('p', { class: 'sr', role: 'status' });
     root.replaceChildren(
-      el('header', { class: 'bar' }, brand(), el('p', { class: 'linked' }, icon('lock'), linked)),
+      el('header', { class: 'bar' }, brand(), seal),
       el('main', { class: 'task' }, bench, live),
-      el('footer', { class: 'foot' }, el('p', { text: 'Reloading this page needs the original link or secret.' })));
+      el('footer', { class: 'foot' }, el('p', { class: 'notice' }, el('span', { class: 'badge' }, icon('key')),
+        el('span', { text: 'This page saves nothing. Reloading it needs the original link or secret.' }))));
     // A file dropped beside the drop zone would replace this page and end the session.
     addEventListener('dragover', event => event.preventDefault());
     addEventListener('drop', event => event.preventDefault());
@@ -508,8 +520,10 @@
         if (Date.now() - spoken > 4000) say(update.message);
       }
       if (Number.isFinite(update.fraction)) {
+        const fraction = Math.min(1, Math.max(0, update.fraction));
         delete bench.dataset.progress;
-        bench.style.setProperty('--progress', String(Math.min(1, Math.max(0, update.fraction))));
+        bench.style.setProperty('--progress', String(fraction));
+        percent.textContent = `${Math.floor(fraction * 100)}%`;
       }
     }
 
@@ -562,6 +576,7 @@
       const nodes = outputs.length ? outputs.flatMap(render).filter(Boolean)
         : [el('p', { class: 'finished' }, icon('done'), el('span', { text: `Finished on ${machine}. This task has no result to show.` }))];
       result.replaceChildren(...nodes);
+      percent.textContent = '';
       show('done', 'Done', `Took ${duration(elapsed)}`);
       runButton.textContent = 'Run again';
       runButton.classList.toggle('again', outputs.length > 0);
@@ -624,6 +639,7 @@
       delete bench.dataset.fault;
       delete bench.dataset.progress;
       bench.style.removeProperty('--progress');
+      percent.textContent = '';
       link(true);
       log.replaceChildren();
       result.replaceChildren(expect());

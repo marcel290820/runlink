@@ -1,4 +1,4 @@
-const approvedGUI = Object.freeze(["5d267aa558c6b658080aa2a7315d236515ea26bb569b19e21f204de859f844ba"]);
+const approvedGUI = Object.freeze(["6cda58d2fb7590537e757bce736c987f1d02ae10423a2a50b0d321d3f8f16253"]);
 
 // The gate shows where the link stands until the verified GUI replaces it.
 const gate = document.getElementById('gate');
@@ -7,6 +7,7 @@ const field = document.getElementById('secret');
 const fieldError = document.getElementById('secret-error');
 const retry = document.getElementById('retry');
 const note = document.getElementById('note');
+const noteText = document.getElementById('note-text');
 const states = {
   secret: ['Enter the link secret', 'The owner sends it separately from the link.'],
   connecting: ['Connecting', "Reaching the owner's machine."],
@@ -24,7 +25,7 @@ const states = {
     'so nothing ran. Let the owner know.'],
   nolink: ['Open a task link', 'This page opens tasks that someone shares with you. Use the link they sent.'],
 };
-const reloadNote = 'You will need the secret again if you reload this page.';
+const reloadNote = 'This page saves nothing, so you will need the secret again if you reload it.';
 const historyNote = 'This link contains its secret, so it can stay in your browser history and on synced devices. ' +
   'To keep it out, ask the owner to send the secret separately.';
 
@@ -36,7 +37,8 @@ function show(state, hint) {
   document.getElementById('status').textContent = status;
   form.hidden = state !== 'secret';
   retry.hidden = state !== 'unreachable';
-  note.textContent = hint;
+  noteText.textContent = hint;
+  note.classList.toggle('caution', hint === historyNote);
   note.hidden = !hint;
 }
 
@@ -386,8 +388,10 @@ export async function mountGUI(bytes, task) {
 // shows, through #gate's data-state and data-reason or the task bench's data-stage,
 // data-fault, data-beat, and --progress: strands pair as the link connects, carry
 // input into the machine, zip toward the result as a run progresses, and break
-// where a run fails. It reads no field values. The canvas blends by difference, so
-// the white it draws reads black on the page and white inside the machine.
+// where a run fails. It reads no field values. It draws in the ink the canvas's CSS
+// sets as --strand, and inside the machine in a band of nacre (--n1 to --n5) that
+// drifts toward the result. It also tells the page's foil where the mouse is, as --tx
+// and --ty from -1 to 1 on the root element.
 (() => {
   // Without a 2D context there is no helix; setup never throws into the loader.
   const canvas = document.getElementById('helix');
@@ -399,6 +403,8 @@ export async function mountGUI(bytes, task) {
   const ramp = (a, b, v) => { const t = clamp((v - a) / (b - a)); return t * t * (3 - 2 * t); };
   const rand = (a, b) => a + Math.random() * (b - a);
   const flip = () => Math.random() < 0.5 ? 0 : 1;
+  const root = document.documentElement;
+  const dark = matchMedia('(prefers-color-scheme: dark)');
 
   function sprite(size, stops) {
     const image = document.createElement('canvas');
@@ -411,9 +417,27 @@ export async function mountGUI(bytes, task) {
     draw.fillRect(0, 0, size, size);
     return image;
   }
-  const DOT = sprite(24, [[0, 1], [0.72, 1], [1, 0]]);
-  const GLOW = sprite(64, [[0, 0.7], [0.22, 0.28], [1, 0]]);
-  if (!DOT || !GLOW) return;
+  const WHITE_DOT = sprite(24, [[0, 1], [0.72, 1], [1, 0]]);
+  const WHITE_GLOW = sprite(64, [[0, 0.7], [0.22, 0.28], [1, 0]]);
+  if (!WHITE_DOT || !WHITE_GLOW) return;
+  // A dot and a glow in the page's ink, and in each of HUES steps along the nacre band,
+  // with each step's color for strokes. palette() makes them from the canvas's CSS.
+  const HUES = 24, PERIOD = 420;
+  let ink = [WHITE_DOT, WHITE_GLOW], hues = [], hueColors = [];
+  // The machine's box while a frame draws, and how far the nacre band has drifted.
+  let shell = null, drift = 0;
+
+  function tinted(image, color) {
+    const copy = document.createElement('canvas');
+    copy.width = copy.height = image.width;
+    const draw = copy.getContext('2d');
+    if (!draw) return image;
+    draw.drawImage(image, 0, 0);
+    draw.globalCompositeOperation = 'source-in';
+    draw.fillStyle = color;
+    draw.fillRect(0, 0, copy.width, copy.height);
+    return copy;
+  }
 
   // Rotation speed in radians per second for each gate state and run stage.
   const SPIN = { opening: 0.8, secret: 0.45, connecting: 2.6, unavailable: 0.25,
@@ -434,6 +458,7 @@ export async function mountGUI(bytes, task) {
   let geo = null, key = '', since = 0, born = 0, beat = '', phase = 0, speed = 0.7, then = 0;
   let filled = 0, broken = 0, area = '', drawn = null, painted = '';
   let riders = [], flyers = [], bits = [], rings = [], pulses = [], motes = [], dust = [], pointer = null;
+  let colors = null, tx = 0, ty = 0, tilt = '';
   let qx = 0, qy = 0, qz = 0, qv = 0, tz = 1, tb = 1, tl = 0.45, tv = 1;
 
   // The path runs along one axis through every marked element, from the first one's
@@ -459,13 +484,16 @@ export async function mountGUI(bytes, task) {
       across, from, L, cross: across ? (first.t + first.b) / 2 : (first.l + first.r) / 2, host, task,
       mode: data.stage ?? data.state ?? '', why: data.fault ?? data.reason ?? '', beat: data.beat ?? '',
       progress: data.progress !== 'unknown' && Number.isFinite(fraction) ? clamp(fraction) : null,
-      core: null, gap: null, room: null,
+      core: null, gap: null, room: null, shell: null,
     };
     const at = v => (v - from) / L;
     marks.forEach((el, i) => {
       if (el.dataset.helix === 'core') {
         g.core = [at(lead(boxes[i])), at(trail(boxes[i]))];
         g.room = boxes[i];
+        // The core sits in the machine, whose rounded box bounds the nacre.
+        const shell = el.parentElement;
+        g.shell = { ...box(shell), radius: parseFloat(getComputedStyle(shell).borderTopLeftRadius) || 0 };
       } else if (el.dataset.helix === 'gap') {
         const shown = [...el.children].filter(child => child.getClientRects().length).map(box);
         const on = across ? boxes[i].t <= g.cross && boxes[i].b >= g.cross : boxes[i].l <= g.cross && boxes[i].r >= g.cross;
@@ -650,8 +678,41 @@ export async function mountGUI(bytes, task) {
     }
   }
 
+  // Colors that CSS cannot parse fall back to plain ones, since a gradient stop would throw on them.
+  function palette() {
+    const style = getComputedStyle(canvas);
+    const read = (name, fallback) => {
+      const value = style.getPropertyValue(name).trim();
+      return CSS.supports('color', value) ? value : fallback;
+    };
+    const strand = read('--strand', '#000'), nacre = ['--n1', '--n2', '--n3', '--n4', '--n5'].map(name => read(name, '#fff'));
+    ink = [tinted(WHITE_DOT, strand), tinted(WHITE_GLOW, strand)];
+    // Sample the band once, a pixel per step.
+    hues = [];
+    hueColors = [];
+    const strip = document.createElement('canvas');
+    strip.width = HUES;
+    strip.height = 1;
+    const draw = strip.getContext('2d', { willReadFrequently: true });
+    if (draw) {
+      const band = draw.createLinearGradient(0, 0, HUES, 0);
+      nacre.forEach((color, i) => band.addColorStop(i / nacre.length, color));
+      band.addColorStop(1, nacre[0]);
+      draw.fillStyle = band;
+      draw.fillRect(0, 0, HUES, 1);
+      const data = draw.getImageData(0, 0, HUES, 1).data;
+      for (let i = 0; i < HUES; i++) {
+        const color = `rgb(${data[4 * i]} ${data[4 * i + 1]} ${data[4 * i + 2]})`;
+        hueColors.push(color);
+        hues.push([tinted(WHITE_DOT, color), tinted(WHITE_GLOW, color)]);
+      }
+    }
+    return { strand, nacre };
+  }
+  dark.addEventListener('change', () => { colors = null; painted = ''; });
+
   addEventListener('pointermove', event => {
-    pointer = event.pointerType === 'mouse' ? { x: event.pageX, y: event.pageY } : null;
+    pointer = event.pointerType === 'mouse' ? { x: event.pageX, y: event.pageY, cx: event.clientX, cy: event.clientY } : null;
   }, { passive: true });
   document.documentElement.addEventListener('pointerleave', () => { pointer = null; });
   // A tap or click near the strands sets them rippling.
@@ -688,6 +749,18 @@ export async function mountGUI(bytes, task) {
     requestAnimationFrame(frame);
     const dt = Math.min(0.05, Math.max(0, (now - then) / 1000));
     then = now;
+    // The foil follows the mouse with a little lag, as a tilted card would.
+    if (pointer && !calm.matches) {
+      const follow = 1 - Math.exp(-6 * dt);
+      tx += (clamp(pointer.cx / innerWidth * 2 - 1, -1, 1) - tx) * follow;
+      ty += (clamp(pointer.cy / innerHeight * 2 - 1, -1, 1) - ty) * follow;
+      const next = `${tx.toFixed(3)} ${ty.toFixed(3)}`;
+      if (next !== tilt) {
+        tilt = next;
+        root.style.setProperty('--tx', tx.toFixed(3));
+        root.style.setProperty('--ty', ty.toFixed(3));
+      }
+    }
     const g = measure();
     if (!g) {
       if (!canvas.hidden) canvas.hidden = true;
@@ -852,6 +925,7 @@ export async function mountGUI(bytes, task) {
       painted = '';
       return;
     }
+    colors ??= palette();
     const picture = `${still}|${area}|${state}|${g.progress}|${g.from}|${g.L}|${g.cross}|${g.gap}|${g.core}`;
     if (still && picture === painted) return;
     painted = picture;
@@ -861,23 +935,38 @@ export async function mountGUI(bytes, task) {
     draw(g, now, dt, still);
   }
 
-  function stamp(image, x, y, r, a) {
+  // The nacre step at a point inside the machine's rounded box, or -1 outside it.
+  function hue(x, y) {
+    if (!shell || !hues.length) return -1;
+    const { l, t, r, b, radius: k } = shell;
+    if (x < l || x > r || y < t || y > b) return -1;
+    const cx = clamp(x, l + k, r - k), cy = clamp(y, t + k, b - k);
+    if ((x - cx) ** 2 + (y - cy) ** 2 > k * k) return -1;
+    const u = ((shell.across ? x - l : y - t) - drift) / PERIOD;
+    return Math.floor((u - Math.floor(u)) * HUES) % HUES;
+  }
+
+  // Draw a dot (kind 0) or a glow (kind 1) centered on x, y.
+  function stamp(kind, x, y, r, a) {
     if (a < 0.005 || r < 0.05) return;
+    const h = hue(x, y);
     ctx.globalAlpha = Math.min(1, a);
-    ctx.drawImage(image, x - r, y - r, 2 * r, 2 * r);
+    ctx.drawImage((h < 0 ? ink : hues[h])[kind], x - r, y - r, 2 * r, 2 * r);
   }
 
   function draw(g, now, dt, still) {
     const S = g.scale;
-    ctx.strokeStyle = '#fff';
-    ctx.fillStyle = '#fff';
+    shell = g.shell && { ...g.shell, across: g.across };
+    drift = phase * 40 % PERIOD;
+    ctx.fillStyle = colors.strand;
     ctx.lineCap = 'round';
     // Base pairs: each rung in two shades, brightest where it faces the reader.
     ctx.lineWidth = 1.1 * S;
     for (let i = 0; i < n; i++) {
       const a = bond[i] * vis[i] * rise[i] * Math.min(1.2, lit[i] + boost[i]) * (0.16 + 0.42 * face[i]);
       if (a < 0.01) continue;
-      const j = 2 * i, mx = (px[j] + px[j + 1]) / 2, my = (py[j] + py[j + 1]) / 2;
+      const j = 2 * i, mx = (px[j] + px[j + 1]) / 2, my = (py[j] + py[j + 1]) / 2, h = hue(mx, my);
+      ctx.strokeStyle = h < 0 ? colors.strand : hueColors[h];
       ctx.globalAlpha = Math.min(1, a);
       ctx.beginPath();
       ctx.moveTo(px[j], py[j]);
@@ -896,13 +985,13 @@ export async function mountGUI(bytes, task) {
       const light = Math.min(1.25, lit[i] + boost[i]) * v;
       const depth = (pz[j] + 1) / 2;
       const r = S * (0.7 + 1.5 * depth), a = (0.22 + 0.78 * depth) * light;
-      stamp(DOT, px[j], py[j], r, a);
-      if (core[i] > 0.05 && depth > 0.55) stamp(GLOW, px[j], py[j], r * 4.5, a * 0.16 * core[i]);
+      stamp(0, px[j], py[j], r, a);
+      if (core[i] > 0.05 && depth > 0.55) stamp(1, px[j], py[j], r * 4.5, a * 0.16 * core[i]);
       if (i < n - 1) {
         const k = j + 2, depth2 = (pz[k] + 1) / 2;
         for (const f of [1 / 3, 2 / 3]) {
           const dd = depth + (depth2 - depth) * f;
-          stamp(DOT, px[j] + (px[k] - px[j]) * f, py[j] + (py[k] - py[j]) * f, S * (0.55 + 1.2 * dd), (0.2 + 0.7 * dd) * light * 0.9);
+          stamp(0, px[j] + (px[k] - px[j]) * f, py[j] + (py[k] - py[j]) * f, S * (0.55 + 1.2 * dd), (0.2 + 0.7 * dd) * light * 0.9);
         }
       }
     }
@@ -918,7 +1007,7 @@ export async function mountGUI(bytes, task) {
         mote.dv = clamp(mote.dv + rand(-0.012, 0.012) * dt, -0.03, 0.03);
         mote.u = (mote.u + mote.du * energy * dt + 1) % 1;
         mote.v = (mote.v + mote.dv * energy * dt + 1) % 1;
-        stamp(DOT, g.room.l + mote.u * w, g.room.t + mote.v * h, mote.r, mote.a * (0.55 + 0.45 * Math.sin(now / 600 + mote.p)));
+        stamp(0, g.room.l + mote.u * w, g.room.t + mote.v * h, mote.r, mote.a * (0.55 + 0.45 * Math.sin(now / 600 + mote.p)));
       }
     }
     // Dust: a halo drifting along the links with the flow, quick while it carries something.
@@ -935,16 +1024,16 @@ export async function mountGUI(bytes, task) {
         if (g.cut != null && s > g.cut) continue;
         const [x, y] = point(g, d), off = mote.side * (mote.off * g.amp + 5 * Math.sin(now / 1100 + mote.p));
         const fade = ramp(0, 0.06, s) * ramp(0, 0.06, 1 - s) * (0.55 + 0.45 * Math.sin(now / 700 + mote.p));
-        stamp(DOT, x + (g.across ? 0 : off), y + (g.across ? off : 0), mote.r * S, mote.a * fade);
+        stamp(0, x + (g.across ? 0 : off), y + (g.across ? off : 0), mote.r * S, mote.a * fade);
       }
     }
     // Riders: bright beads carried along a strand.
     for (const rider of riders) {
       spot(rider.s, rider.k);
       const depth = (qz + 1) / 2, r = S * (1.2 + 1.3 * depth) * rider.size, a = (0.6 + 0.4 * depth) * qv;
-      stamp(DOT, qx, qy, r, a);
+      stamp(0, qx, qy, r, a);
       const s = rider.s;
-      if (g.core && s > g.core[0] && s < g.core[1]) stamp(GLOW, qx, qy, r * 5, a * 0.3);
+      if (g.core && s > g.core[0] && s < g.core[1]) stamp(1, qx, qy, r * 5, a * 0.3);
     }
     // Flyers: input leaving its field for the strand, with a short trail.
     for (const flyer of flyers) {
@@ -954,35 +1043,17 @@ export async function mountGUI(bytes, task) {
       const x = u * u * flyer.x + 2 * u * t * flyer.cx + t * t * qx, y = u * u * flyer.y + 2 * u * t * flyer.cy + t * t * qy;
       flyer.trail.unshift(x, y);
       flyer.trail.length = Math.min(flyer.trail.length, 16);
-      for (let i = 2; i < flyer.trail.length; i += 2) stamp(DOT, flyer.trail[i], flyer.trail[i + 1], S * (1.5 - i * 0.06), 0.55 - i * 0.032);
-      stamp(DOT, x, y, S * 1.7, 0.95);
+      for (let i = 2; i < flyer.trail.length; i += 2) stamp(0, flyer.trail[i], flyer.trail[i + 1], S * (1.5 - i * 0.06), 0.55 - i * 0.032);
+      stamp(0, x, y, S * 1.7, 0.95);
     }
-    for (const bit of bits) stamp(DOT, bit.x, bit.y, bit.r, 0.85 * Math.min(1, bit.life / bit.max * 1.6));
+    for (const bit of bits) stamp(0, bit.x, bit.y, bit.r, 0.85 * Math.min(1, bit.life / bit.max * 1.6));
+    ctx.strokeStyle = colors.strand;
     ctx.lineWidth = 1.4;
     for (const ring of rings) {
       ctx.globalAlpha = 0.55 * (1 - ring.t);
       ctx.beginPath();
       ctx.arc(ring.x, ring.y, 8 + 64 * (1 - (1 - ring.t) ** 3), 0, TAU);
       ctx.stroke();
-    }
-    // The result's node, where the strands end: open, filled once the result is in, broken by a failure.
-    if (g.task) {
-      const settle = still ? 1 : 1 - Math.exp(-8 * dt);
-      filled += ((g.mode === 'done' ? 1 : 0) - filled) * settle;
-      broken += ((g.cut != null ? 1 : 0) - broken) * settle;
-      const [x, y] = point(g, g.L), r = 7.5 * S;
-      ctx.globalAlpha = 1 - 0.65 * broken;
-      ctx.lineWidth = 2.25 * S;
-      ctx.setLineDash(broken > 0.5 ? [2.5, 3.6] : []);
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, TAU);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      if (filled > 0.01) {
-        ctx.beginPath();
-        ctx.arc(x, y, r * filled, 0, TAU);
-        ctx.fill();
-      }
     }
     // While a run works with a known end, a small ring of beads circles the fork where the strand zips.
     if (g.mode === 'running' && g.progress != null && !still) {
@@ -991,8 +1062,33 @@ export async function mountGUI(bytes, task) {
       for (let i = 0; i < 5; i++) {
         const angle = now / 180 + i * TAU / 5, depth = (Math.cos(angle) + 1) / 2;
         const along = Math.cos(angle) * radius * 0.3, side = Math.sin(angle) * radius;
-        stamp(DOT, x + (g.across ? along : side), y + (g.across ? side : along), g.scale * (0.9 + 1.2 * depth), 0.4 + 0.6 * depth);
+        stamp(0, x + (g.across ? along : side), y + (g.across ? side : along), g.scale * (0.9 + 1.2 * depth), 0.4 + 0.6 * depth);
       }
+    }
+    // The result's node, where the strands end: open, a pearl once the result is in, broken by a failure.
+    if (g.task) {
+      const settle = still ? 1 : 1 - Math.exp(-8 * dt);
+      filled += ((g.mode === 'done' ? 1 : 0) - filled) * settle;
+      broken += ((g.cut != null ? 1 : 0) - broken) * settle;
+      const [x, y] = point(g, g.L), r = 7.5 * S;
+      if (filled > 0.01) {
+        const pearl = ctx.createRadialGradient(x - r * 0.35 * filled, y - r * 0.4 * filled, 0, x, y, r * filled);
+        pearl.addColorStop(0, '#fff');
+        colors.nacre.slice(0, 3).reverse().forEach((color, i) => pearl.addColorStop(0.4 + i * 0.3, color));
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = pearl;
+        ctx.beginPath();
+        ctx.arc(x, y, r * filled, 0, TAU);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1 - 0.65 * broken;
+      ctx.strokeStyle = colors.strand;
+      ctx.lineWidth = 2.25 * S;
+      ctx.setLineDash(broken > 0.5 ? [2.5, 3.6] : []);
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, TAU);
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
     ctx.globalAlpha = 1;
   }

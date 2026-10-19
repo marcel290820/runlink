@@ -7,6 +7,7 @@ const field = document.getElementById('secret');
 const fieldError = document.getElementById('secret-error');
 const retry = document.getElementById('retry');
 const note = document.getElementById('note');
+const noteText = document.getElementById('note-text');
 const states = {
   secret: ['Enter the link secret', 'The owner sends it separately from the link.'],
   connecting: ['Connecting', "Reaching the owner's machine."],
@@ -24,7 +25,7 @@ const states = {
     'so nothing ran. Let the owner know.'],
   nolink: ['Open a task link', 'This page opens tasks that someone shares with you. Use the link they sent.'],
 };
-const reloadNote = 'You will need the secret again if you reload this page.';
+const reloadNote = 'This page saves nothing, so you will need the secret again if you reload it.';
 const historyNote = 'This link contains its secret, so it can stay in your browser history and on synced devices. ' +
   'To keep it out, ask the owner to send the secret separately.';
 
@@ -36,7 +37,8 @@ function show(state, hint) {
   document.getElementById('status').textContent = status;
   form.hidden = state !== 'secret';
   retry.hidden = state !== 'unreachable';
-  note.textContent = hint;
+  noteText.textContent = hint;
+  note.classList.toggle('caution', hint === historyNote);
   note.hidden = !hint;
 }
 

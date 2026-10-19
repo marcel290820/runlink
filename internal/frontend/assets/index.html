@@ -14,9 +14,8 @@
 <meta name="color-scheme" content="light dark">
 <title>Runlink</title>
 <link rel="preload" href="/assets/archivo.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/assets/martian-mono.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="stylesheet" href="/assets/style.css" integrity="sha256-qHar3+L/i5bd5XEaLklOEI0ROrkF2XradlcVKZ2/dDs=">
-<script type="module" src="/assets/loader.mjs" integrity="sha256-0hJ7TYBr2pPmFi1Vi7qnb12BeC0MwGTdZOomUNM7yLI="></script>
+<link rel="stylesheet" href="/assets/style.css" integrity="sha256-DFP1UpCEnbFslAVsMs2v7e2fIieb2C0dkt2xvZ1HAk0=">
+<script type="module" src="/assets/loader.mjs" integrity="sha256-7LwUj1jChys5+e4iu2YVfvMp26eWKpv/pnc1/rlss9E="></script>
 </head>
 <body>
 <div class="view" id="gate-view">
@@ -24,25 +23,26 @@
 <main class="gate" id="gate" data-state="opening">
 <h1 id="gate-title">Opening your link</h1>
 <p id="status" role="status">Getting the link ready.</p>
-<p class="about">Runlink runs a task on its owner's computer and shows you the result. There is nothing to install.</p>
+<p class="about">Runlink runs a task on its owner's computer and shows you the result, over a connection encrypted end to end. There is nothing to install.</p>
 <div class="span">
-<span class="end" aria-hidden="true">You</span>
+<span class="end you" aria-hidden="true">You</span>
 <span class="wire" data-helix="link" aria-hidden="true"></span>
 <div class="mid" data-helix="gap">
 <form id="secret-form" class="secret" novalidate hidden>
 <label class="sr" for="secret">Link secret</label>
+<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 12.5 20 3.5M16.5 7l2.5 2.5M14 9.5l2 2M8 20.5a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9z"/></svg>
 <input id="secret" class="control" type="password" placeholder="Paste the secret" autocomplete="off" spellcheck="false" maxlength="256" aria-describedby="secret-error">
 <button class="primary" type="submit">Connect</button>
 </form>
 <button id="retry" class="primary" type="button" hidden>Try again</button>
 </div>
 <span class="wire" data-helix="link" aria-hidden="true"></span>
-<span class="end" aria-hidden="true">Owner's machine</span>
+<span class="end host" aria-hidden="true">Owner's machine</span>
 </div>
 <p class="error" id="secret-error"></p>
 <noscript><p>Turn on JavaScript to open this link.</p></noscript>
 </main>
-<footer class="foot"><p id="note" hidden></p></footer>
+<footer class="foot"><p id="note" class="notice" hidden><span class="badge"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 12.5 20 3.5M16.5 7l2.5 2.5M14 9.5l2 2M8 20.5a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9z"/></svg></span><span id="note-text"></span></p></footer>
 </div>
 <div id="task"></div>
 <canvas id="helix" aria-hidden="true" hidden></canvas>

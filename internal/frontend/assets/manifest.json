@@ -8,23 +8,23 @@
     "size": 318
   },
   "gui.js": {
-    "sha256": "5d267aa558c6b658080aa2a7315d236515ea26bb569b19e21f204de859f844ba",
-    "size": 37210
+    "sha256": "6cda58d2fb7590537e757bce736c987f1d02ae10423a2a50b0d321d3f8f16253",
+    "size": 38174
   },
   "index.html": {
-    "sha256": "a85b075adf2b85950650fb751b7165a60d6e48f3175bfc9e2b254737ec409b15",
-    "size": 2536
+    "sha256": "d3df865adb38dcd729e7df31f5d26003477abbea2cfeaeccfd445603ceb767eb",
+    "size": 2881
   },
   "loader.mjs": {
-    "sha256": "d2127b4d806bda93e6162d558bbaa76f5d81782d0cc064dd64ea2650d33bc8b2",
-    "size": 45877
+    "sha256": "ecbc148f58c2872b39f9ee22bb66157ef329dba7962a9bffa67735feb96cb3d1",
+    "size": 50509
   },
   "martian-mono.woff2": {
     "sha256": "03f79ddab2c0b89068f9e7c48330de56e6eb7977656a7dd2112b9a92c59169e2",
     "size": 30804
   },
   "style.css": {
-    "sha256": "a876abdfe2ff8b96dde5711a2e494e108d113ab905d97ada765715299dbf743b",
-    "size": 25529
+    "sha256": "0c53f55290849db16c94056c32cdafeded9f22279bd82d1d92ddb1bd9d47024d",
+    "size": 40911
   }
 }
