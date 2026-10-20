@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"os"
 	"os/exec"
@@ -79,27 +80,51 @@ var (
 	placeholder = regexp.MustCompile(`\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 )
 
-// loadTask reads a task file, or makes a task without inputs from an
-// executable whose output is text.
+// loadTask reads a task file. An executable loads the task file the guided
+// setup stored for it or, without one, makes a task without inputs whose
+// output is text.
 func loadTask(path string) (*task, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
 	}
 	t := &task{dir: filepath.Dir(abs)}
-	if filepath.Ext(path) != ".json" {
-		t.Title, t.Command, t.Output = filepath.Base(path), []string{abs}, &output{Kind: "text"}
-	} else if err := t.read(abs); err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+	if filepath.Ext(path) == ".json" {
+		if err := t.read(abs); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+	} else {
+		stored := storedPath(path)
+		switch err := t.read(storedPath(abs)); {
+		case errors.Is(err, fs.ErrNotExist):
+			t.Title, t.Command, t.Output = filepath.Base(path), []string{abs}, &output{Kind: "text"}
+		case err != nil:
+			return nil, fmt.Errorf("%s: %w; fix it by hand, or delete it to answer the setup questions again", stored, err)
+		case !t.runs(abs):
+			// Scripts named alike, as greet.sh and greet.py, would share one file.
+			return nil, fmt.Errorf("%s is for another script: its command does not run %s", stored, path)
+		}
 	}
 	command := t.Command[0]
 	if strings.ContainsRune(command, filepath.Separator) && !filepath.IsAbs(command) {
 		command = filepath.Join(t.dir, command)
 	}
-	if _, err := exec.LookPath(command); err != nil {
+	if _, err := exec.LookPath(command); errors.Is(err, fs.ErrPermission) {
+		return nil, fmt.Errorf("%s is not executable; run chmod +x %[1]s", t.Command[0])
+	} else if err != nil {
 		return nil, fmt.Errorf("cannot run %s: %w", t.Command[0], err)
 	}
 	return t, nil
+}
+
+// runs reports whether t's command runs the executable at abs.
+func (t *task) runs(abs string) bool {
+	return slices.ContainsFunc(t.Command, func(arg string) bool {
+		if !filepath.IsAbs(arg) {
+			arg = filepath.Join(t.dir, arg)
+		}
+		return arg == abs
+	})
 }
 
 func (t *task) read(path string) error {
@@ -107,13 +132,17 @@ func (t *task) read(path string) error {
 	if err != nil {
 		return err
 	}
+	return t.parse(data)
+}
+
+func (t *task) parse(data []byte) error {
 	if len(data) > maxTaskFile {
 		return errors.New("a task file is at most 64 KiB")
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(t); err != nil {
-		return err
+		return located(data, err)
 	}
 	if dec.Decode(new(any)) != io.EOF {
 		return errors.New("a task file holds one JSON object")
@@ -194,6 +223,24 @@ func (in *input) validate() error {
 		}
 	}
 	return nil
+}
+
+// located gives a JSON error the line it is on, for an owner fixing the file.
+func located(data []byte, err error) error {
+	var syntax *json.SyntaxError
+	var kind *json.UnmarshalTypeError
+	offset := int64(-1)
+	switch {
+	case errors.As(err, &syntax):
+		offset = syntax.Offset
+	case errors.As(err, &kind):
+		offset = kind.Offset
+	}
+	text := strings.TrimPrefix(err.Error(), "json: ")
+	if offset < 0 {
+		return errors.New(text)
+	}
+	return fmt.Errorf("line %d: %s", 1+bytes.Count(data[:min(offset, int64(len(data)))], []byte("\n")), text)
 }
 
 func isNumber(v any) bool { _, ok := v.(float64); return v == nil || ok }

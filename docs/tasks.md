@@ -9,7 +9,8 @@ scripts/dev.sh                                  # terminal 1: the local stack
 build/runlink share examples/greet.json         # terminal 2: prints the link
 build/runlink share --separate-secret examples/greet.json
 build/runlink share examples/sort.json          # a file in, a file out
-build/runlink share ./backup.sh                 # an executable without inputs
+build/runlink share ./backup.sh                 # a script: set up its form once
+build/runlink share --edit ./backup.sh          # change the script's answers
 ```
 
 The link is `{service}/{uuid}#{secret}`. Anyone holding it can run the task, and
@@ -19,8 +20,45 @@ it into the page. Each `share` creates a new link; an old one stops working when
 its command ends. In a terminal, `share` also copies the link (without the secret
 under `--separate-secret`) with `pbcopy`, `wl-copy`, `xclip` or `xsel`, or else
 through the terminal's OSC 52 clipboard, which also works over SSH; each Enter
-opens the full link in your default browser. The terminal shows connections, runs, and the script's stderr,
-with control characters escaped because stderr can echo recipient input.
+opens the full link in your default browser.
+
+The terminal shows the task, the link, and below them a status that redraws in
+place: how many recipients are connected and the latest run, running, finished, or
+failed with its duration, with its last stderr lines indented under it. Earlier
+runs stay above as one line each. Stderr is shown with control characters escaped,
+because it can echo recipient input. Color marks state and nothing else;
+`NO_COLOR` turns it off, a locale that is not UTF-8 gets ASCII symbols, and
+`TERM=dumb` or redirected output gets plain lines: the link on stdout and one
+timestamped line per connection, run, and stderr line on stderr, so a log keeps
+every stderr line.
+
+### Sharing a script
+
+The first time you share a script from a terminal, `share` asks what recipients
+see and saves the answers beside the script as `<name>.runlink.json`: `backup.sh`
+gets `backup.runlink.json`, leaving `backup.json` free. Every question has a
+suggestion, so pressing Enter through them shares a task without inputs that
+shows stdout as text. The questions follow the task file below: title,
+description, owner, then inputs one at a time (label, name, type, options for a
+choice, and whether it is required), the output's kind and label, the timeout,
+and progress. Lists take the arrow keys or an option's first letter; a wrong
+answer is explained under the question until you fix it. Before anything is
+saved, `share` shows the form as recipients will see it and the command it will
+run: the script with each input as an argument, in order, and all values as JSON
+on stdin. Enter saves and shares, `e` goes through the answers again, and Ctrl-C
+at any point stops without writing anything.
+
+Later shares load the saved file without asking. `--edit` asks again with the
+saved answers as suggestions and keeps the fields it does not ask about, such as
+`help`, `placeholder` and bounds; editing the file by hand works as well. A
+command written by hand stays as written; one the setup made follows the inputs.
+A saved file that does not load, or whose command does not run the script, stops
+`share` with the file's path and the problem, and `share` never asks over it.
+The file is written whole or not at all, readable only by you when new, and
+only `--edit` replaces one, keeping its permissions. Without
+a terminal, a script without a saved file shares without input, and nothing is
+asked or written. Name a task file directly, as in `runlink share backup.json`,
+and it is shared as it is, without questions.
 
 ## Task file
 
@@ -51,7 +89,9 @@ A task file is one JSON object, at most 64 KiB, with only these fields:
 | `timeout` | Seconds from accepting a run, including receiving its files, until the run and every process it started are killed; default 60, at most 3600 |
 | `progress` | Show each stderr line to recipients while the task runs; off by default. A recipient whose connection cannot keep up misses lines instead of slowing the task |
 
-Sharing an executable directly makes a task without inputs that shows stdout as text.
+Sharing an executable loads its saved task file, `<name>.runlink.json`, which
+the setup writes in this format and a command running the executable; without
+one, it makes a task without inputs that shows stdout as text.
 
 ## Input
 

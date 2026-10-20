@@ -237,6 +237,9 @@ func (b *browser) run(t *testing.T, values map[string]any, files ...[]byte) (sta
 	}
 }
 
+// plainView logs events to w, as share does without a terminal.
+func plainView(w io.Writer) *view { return newView(style{}, nil, io.Discard, w) }
+
 // writeTask writes a script and a task file running it to a new directory.
 func writeTask(t *testing.T, script, file string) string {
 	t.Helper()
@@ -299,7 +302,7 @@ func TestShareEndToEnd(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	var stdout, stderr lockedBuffer
 	done := make(chan int, 1)
-	go func() { done <- run(ctx, []string{"share", path}, env(stack.Frontend), &stdout, &stderr) }()
+	go func() { done <- run(ctx, []string{"share", path}, env(stack.Frontend), nil, &stdout, &stderr) }()
 	var link []string
 	for deadline := time.Now().Add(10 * time.Second); link == nil; time.Sleep(20 * time.Millisecond) {
 		link = linkLine.FindStringSubmatch(stdout.String())
@@ -373,7 +376,7 @@ func TestAuthenticationRejectsWrongSecretSubstitutionAndReplay(t *testing.T) {
 	const id = "12345678-1234-4234-8234-123456789abc"
 	secret := key()
 	var events lockedBuffer
-	s := newSharer(t.Context(), tk, id, secret, &events)
+	s := newSharer(t.Context(), tk, id, secret, plainView(&events))
 
 	b := direct(t, s)
 	nonce, proof, verified := b.authenticate(t, secret, id, "", "")
@@ -433,7 +436,7 @@ func TestStalledRecipientBlocksOnlyItself(t *testing.T) {
 	}
 	const id = "12345678-1234-4234-8234-123456789abc"
 	secret := key()
-	s := newSharer(t.Context(), tk, id, secret, io.Discard)
+	s := newSharer(t.Context(), tk, id, secret, plainView(io.Discard))
 	stalled := direct(t, s)
 	stalled.authenticate(t, secret, id, "", "")
 	if _, ok := stalled.accepted(t); !ok {
@@ -467,7 +470,7 @@ func TestFileInputs(t *testing.T) {
 	}
 	const id = "12345678-1234-4234-8234-123456789abc"
 	secret := key()
-	s := newSharer(t.Context(), tk, id, secret, io.Discard)
+	s := newSharer(t.Context(), tk, id, secret, plainView(io.Discard))
 	connect := func() *browser {
 		b := direct(t, s)
 		b.authenticate(t, secret, id, "", "")
@@ -528,7 +531,7 @@ func TestFileInputs(t *testing.T) {
 		"inputs": [{"name": "Doc", "type": "file"}, {"name": "doc", "type": "file"}], "output": {"kind": "text"}}`)); err != nil {
 		t.Fatal(err)
 	}
-	s = newSharer(t.Context(), tk, id, secret, io.Discard)
+	s = newSharer(t.Context(), tk, id, secret, plainView(io.Discard))
 	same := map[string]any{"name": "a.txt", "size": 1.0}
 	if _, output, failure := connect().run(t, map[string]any{"Doc": same, "doc": same}, []byte("A"), []byte("b")); failure != nil || output != "Ab" {
 		t.Fatalf("case-variant inputs: %q %+v", output, failure)
@@ -539,8 +542,7 @@ func TestFileInputs(t *testing.T) {
 // with control characters escaped, one entry per line.
 func TestOwnerLogEscapesControlCharacters(t *testing.T) {
 	var events bytes.Buffer
-	s := newSharer(t.Context(), &task{}, "", nil, &events)
-	s.log.Print("  Choosing words for \x1b]52;c;cHduZWQ=\x07\u009b2J\x9b\nRun finished\tin 1s.")
+	plainView(&events).log.Print("  Choosing words for \x1b]52;c;cHduZWQ=\x07\u009b2J\x9b\nRun finished\tin 1s.")
 	got := events.String()
 	if strings.ContainsAny(got, "\x1b\x07\u009b") || strings.Contains(got, "\x9b") || strings.Count(got, "\n") != 1 ||
 		!strings.HasSuffix(got, `Choosing words for \x1b]52;c;cHduZWQ=\x07\x9b2J`+"\ufffd"+`\x0aRun finished`+"\tin 1s.\n") {
@@ -558,7 +560,7 @@ func TestStalledRecipientIsDisconnected(t *testing.T) {
 	const id = "12345678-1234-4234-8234-123456789abc"
 	secret := key()
 	var events lockedBuffer
-	s := newSharer(t.Context(), tk, id, secret, &events)
+	s := newSharer(t.Context(), tk, id, secret, plainView(&events))
 	b := direct(t, s)
 	b.authenticate(t, secret, id, "", "")
 	if _, ok := b.accepted(t); !ok {
@@ -576,14 +578,15 @@ func TestStalledRecipientIsDisconnected(t *testing.T) {
 	}
 }
 
-// slowChannel stands in for a browser that takes one message a second.
+// slowChannel stands in for a browser that takes one message each delay.
 type slowChannel struct {
 	datachannel.ReadWriteCloserDeadliner
+	delay time.Duration
 }
 
 func (slowChannel) SetWriteDeadline(time.Time) error { return nil }
-func (slowChannel) WriteDataChannel(p []byte, _ bool) (int, error) {
-	time.Sleep(time.Second)
+func (c slowChannel) WriteDataChannel(p []byte, _ bool) (int, error) {
+	time.Sleep(c.delay)
 	return len(p), nil
 }
 
@@ -597,9 +600,9 @@ func TestSlowRecipientDoesNotSlowTheRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := newSharer(t.Context(), tk, "12345678-1234-4234-8234-123456789abc", key(), io.Discard)
+	s := newSharer(t.Context(), tk, "12345678-1234-4234-8234-123456789abc", key(), plainView(io.Discard))
 	began := time.Now()
-	go func() { _ = s.execute(slowChannel{}, map[string]any{}) }()
+	go func() { _ = s.execute(slowChannel{delay: time.Second}, map[string]any{}) }()
 	time.Sleep(100 * time.Millisecond) // execute takes the run lock
 	// Two stage messages take two seconds; the run itself takes milliseconds.
 	for !s.running.TryLock() {
@@ -607,6 +610,41 @@ func TestSlowRecipientDoesNotSlowTheRun(t *testing.T) {
 			t.Fatal("progress delivery held the run")
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// The status follows each run to its own end: a run whose output is still being
+// delivered does not overwrite the outcome of a run that started after it.
+func TestRunStatusFollowsEachRun(t *testing.T) {
+	path := writeTask(t, `if [ "$1" = fail ]; then exit 1; fi; echo one >&2; echo two >&2`,
+		`{"title": "T", "command": ["./task.sh", "{mode}"], "inputs": [{"name": "mode", "type": "text"}], "progress": true}`)
+	tk, err := loadTask(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var screen lockedBuffer
+	st := style{live: true}
+	v := newView(st, &region{w: &screen, st: st, width: func() int { return 80 }}, &screen, io.Discard)
+	defer v.close()
+	s := newSharer(t.Context(), tk, "12345678-1234-4234-8234-123456789abc", key(), v)
+	first := make(chan error, 1)
+	go func() { first <- s.execute(slowChannel{delay: 300 * time.Millisecond}, map[string]any{"mode": "ok"}) }()
+	time.Sleep(100 * time.Millisecond) // the first run takes the run lock
+	for !s.running.TryLock() {         // and gives it up while its progress is still on the way
+		time.Sleep(10 * time.Millisecond)
+	}
+	s.running.Unlock()
+	if err := s.execute(slowChannel{}, map[string]any{"mode": "fail"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-first; err != nil {
+		t.Fatal(err)
+	}
+	v.mu.Lock()
+	latest := *v.run
+	v.mu.Unlock()
+	if latest.failure == nil || latest.failure.Code != "failed" || !strings.Contains(screen.String(), "Finished in") {
+		t.Fatalf("latest run %+v, screen:\n%s", latest, screen.String())
 	}
 }
 
@@ -632,11 +670,11 @@ func TestFingerprint(t *testing.T) {
 func TestShareReportsServiceProblems(t *testing.T) {
 	path := writeTask(t, "echo ok", `{"title": "T", "command": ["./task.sh"]}`)
 	var stdout, stderr bytes.Buffer
-	if code := run(t.Context(), []string{"share", path}, env("http://127.0.0.1:1"), &stdout, &stderr); code != 1 ||
+	if code := run(t.Context(), []string{"share", path}, env("http://127.0.0.1:1"), nil, &stdout, &stderr); code != 1 ||
 		!strings.Contains(stderr.String(), "start the local stack") {
 		t.Fatalf("exit %d: %s", code, stderr.String())
 	}
-	if code := run(t.Context(), []string{"share", "--help"}, env(""), &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "--separate-secret") {
+	if code := run(t.Context(), []string{"share", "--help"}, env(""), nil, &stdout, &stderr); code != 0 || !strings.Contains(stdout.String(), "--separate-secret") {
 		t.Fatalf("help: exit %d, %q", code, stdout.String())
 	}
 	// A service that upgrades but never registers the task fails within the startup deadline.
@@ -648,13 +686,13 @@ func TestShareReportsServiceProblems(t *testing.T) {
 	}))
 	defer silent.Close()
 	stderr.Reset()
-	if code := run(t.Context(), []string{"share", path}, env(silent.URL), io.Discard, &stderr); code != 1 ||
+	if code := run(t.Context(), []string{"share", path}, env(silent.URL), nil, io.Discard, &stderr); code != 1 ||
 		!strings.Contains(stderr.String(), "did not register the task in time") {
 		t.Fatalf("silent service: exit %d: %s", code, stderr.String())
 	}
 	for _, args := range [][]string{{"share"}, {"share", "a", "b"}, {"share", "--unknown", path}, {"share", filepath.Join(t.TempDir(), "missing.json")}} {
 		stderr.Reset()
-		if code := run(t.Context(), args, env("http://127.0.0.1:1"), io.Discard, &stderr); code != 2 {
+		if code := run(t.Context(), args, env("http://127.0.0.1:1"), nil, io.Discard, &stderr); code != 2 {
 			t.Errorf("%q: exit %d: %s", args, code, stderr.String())
 		}
 	}
@@ -682,7 +720,7 @@ func TestClipboardAndBrowse(t *testing.T) {
 	if got := clipboard(t.Context(), &term, "link"); got != "Sent to the terminal's clipboard." || term.String() != "\x1b]52;c;bGluaw==\a" {
 		t.Fatalf("without a tool: %q, terminal %q", got, term.String())
 	}
-	if err := browse("http://x/#k"); err == nil {
+	if err := browse(t.Context(), "http://x/#k"); err == nil {
 		t.Fatal("browse succeeded without an opener")
 	}
 
@@ -705,7 +743,7 @@ func TestClipboardAndBrowse(t *testing.T) {
 	if msg := clipboard(t.Context(), &term, "link"); msg != "Copied to the clipboard." || term.Len() != 0 {
 		t.Fatalf("with %s: %q, terminal %q", copier, msg, term.String())
 	}
-	if err := browse("http://x/#k"); err != nil {
+	if err := browse(t.Context(), "http://x/#k"); err != nil {
 		t.Fatal(err)
 	}
 	copied, _ := os.ReadFile(got)
