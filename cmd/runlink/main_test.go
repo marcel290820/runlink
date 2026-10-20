@@ -2,14 +2,12 @@ package main
 
 import (
 	"bytes"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"runlink/internal/buildinfo"
-	"runlink/internal/devstack"
 )
 
 func env(service string) func(string) string {
@@ -23,12 +21,7 @@ func env(service string) func(string) string {
 
 // End-to-end tests start the local stack in-process and point the CLI at it.
 func TestStatusThroughLocalStack(t *testing.T) {
-	stack, err := devstack.Start(t.Context(), devstack.Config{
-		Frontend: "127.0.0.1:0", App: "127.0.0.1:0", TURN: "127.0.0.1:0", StateDir: t.TempDir(),
-	}, slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatal(err)
-	}
+	stack := startStack(t)
 	t.Cleanup(func() {
 		if err := stack.Stop(); err != nil {
 			t.Error(err)

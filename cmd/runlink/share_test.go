@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,7 +24,6 @@ import (
 	"github.com/pion/datachannel"
 	"github.com/pion/webrtc/v4"
 
-	"runlink/internal/devstack"
 	"runlink/internal/frontend"
 )
 
@@ -290,13 +288,7 @@ var linkLine = regexp.MustCompile(`(?m)^  (http://\S+)/([0-9a-f-]{36})#([A-Za-z0
 // browser signals through A and B, authenticates, gets the GUI and definition,
 // and runs the task. The session then survives the whole stack stopping.
 func TestShareEndToEnd(t *testing.T) {
-	stack, err := devstack.Start(t.Context(), devstack.Config{
-		Frontend: "127.0.0.1:0", App: "127.0.0.1:0", TURN: "127.0.0.1:0", StateDir: t.TempDir(),
-	}, slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = stack.Stop() })
+	stack := startStack(t)
 	path := writeTask(t, `echo "starting $1" >&2; cat; echo; echo "$1 $2"`, echoTask)
 
 	ctx, cancel := context.WithCancel(t.Context())

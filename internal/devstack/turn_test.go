@@ -247,7 +247,7 @@ func TestTURNSecretRefusesSpecialFiles(t *testing.T) {
 func TestTURNLogsRejectionsWithoutPasswords(t *testing.T) {
 	var logs bytes.Buffer
 	c := ephemeral
-	c.StateDir = t.TempDir()
+	c.StateDir = stateDir(t)
 	stack, err := Start(t.Context(), c, slog.New(slog.NewJSONHandler(&logs, nil)))
 	if err != nil {
 		t.Fatal(err)

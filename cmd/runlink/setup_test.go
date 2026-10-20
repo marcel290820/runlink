@@ -90,10 +90,15 @@ func terminalEnv(service string, pairs ...string) func(string) string {
 	return func(key string) string { return vars[key] }
 }
 
+// startStack runs the local stack in-process on free ports.
 func startStack(t *testing.T) *devstack.Stack {
 	t.Helper()
+	state := t.TempDir()
+	if err := os.Chmod(state, 0o700); err != nil { // private whatever the umask, as the stack requires
+		t.Fatal(err)
+	}
 	stack, err := devstack.Start(t.Context(), devstack.Config{
-		Frontend: "127.0.0.1:0", App: "127.0.0.1:0", TURN: "127.0.0.1:0", StateDir: t.TempDir(),
+		Frontend: "127.0.0.1:0", App: "127.0.0.1:0", TURN: "127.0.0.1:0", StateDir: state,
 	}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)

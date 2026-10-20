@@ -19,12 +19,23 @@ import (
 
 var ephemeral = Config{Frontend: "127.0.0.1:0", App: "127.0.0.1:0", TURN: "127.0.0.1:0"}
 
+// stateDir is a private state directory, as the stack requires, whatever the
+// umask t.TempDir creates directories under.
+func stateDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 // startStack runs a stack on free loopback ports in a temporary state directory
 // and stops it when the test ends.
 func startStack(t *testing.T) *Stack {
 	t.Helper()
 	c := ephemeral
-	c.StateDir = t.TempDir()
+	c.StateDir = stateDir(t)
 	stack, err := Start(context.Background(), c, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -141,7 +152,7 @@ func TestStackReportsStartupFailures(t *testing.T) {
 	}
 	defer busy.Close()
 	c := ephemeral
-	c.StateDir = t.TempDir()
+	c.StateDir = stateDir(t)
 	c.App = busy.Addr().String()
 	if _, err := Start(context.Background(), c, slog.New(slog.DiscardHandler)); err == nil || !strings.HasPrefix(err.Error(), "app: ") {
 		t.Fatalf("port conflict: %v", err)
@@ -149,7 +160,7 @@ func TestStackReportsStartupFailures(t *testing.T) {
 
 	// The stack refuses a shared state directory before touching its contents.
 	c = ephemeral
-	c.StateDir = t.TempDir()
+	c.StateDir = stateDir(t)
 	if err := os.Chmod(c.StateDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +174,7 @@ func TestStackReportsStartupFailures(t *testing.T) {
 
 	// B refuses a shared state directory of its own; the whole stack stops with its reason.
 	c = ephemeral
-	c.StateDir = t.TempDir()
+	c.StateDir = stateDir(t)
 	shared := filepath.Join(c.StateDir, "app")
 	if err := errors.Join(os.Mkdir(shared, 0o700), os.Chmod(shared, 0o755)); err != nil {
 		t.Fatal(err)
@@ -185,7 +196,7 @@ func TestStackReportsStartupFailures(t *testing.T) {
 
 func TestStackStopsWithContext(t *testing.T) {
 	c := ephemeral
-	c.StateDir = t.TempDir()
+	c.StateDir = stateDir(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	stack, err := Start(ctx, c, slog.New(slog.DiscardHandler))
 	if err != nil {
@@ -199,7 +210,7 @@ func TestStackStopsWithContext(t *testing.T) {
 
 func TestStackStopsWhenTURNFails(t *testing.T) {
 	c := ephemeral
-	c.StateDir = t.TempDir()
+	c.StateDir = stateDir(t)
 	stack, err := Start(context.Background(), c, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
