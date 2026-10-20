@@ -16,7 +16,10 @@ The link is `{service}/{uuid}#{secret}`. Anyone holding it can run the task, and
 the secret can stay in their browser history. `--separate-secret` prints the link
 and the secret apart, so you can send the secret another way; the recipient pastes
 it into the page. Each `share` creates a new link; an old one stops working when
-its command ends. The terminal shows connections, runs, and the script's stderr,
+its command ends. In a terminal, `share` also copies the link (without the secret
+under `--separate-secret`) with `pbcopy`, `wl-copy`, `xclip` or `xsel`, or else
+through the terminal's OSC 52 clipboard, which also works over SSH; each Enter
+opens the full link in your default browser. The terminal shows connections, runs, and the script's stderr,
 with control characters escaped because stderr can echo recipient input.
 
 ## Task file

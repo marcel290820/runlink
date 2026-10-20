@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -15,8 +16,10 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -27,6 +30,7 @@ import (
 	"github.com/coder/websocket/wsjson"
 	"github.com/pion/datachannel"
 	"github.com/pion/webrtc/v4"
+	"golang.org/x/sys/unix"
 
 	"runlink/internal/frontend"
 )
@@ -98,6 +102,20 @@ func share(ctx context.Context, origin string, args []string, stdout, stderr io.
 		fmt.Fprintf(stdout, "Sharing %q. Send this link:\n\n  %s#%s\n\n", t.Title, link, key)
 	}
 	fmt.Fprintln(stdout, "Anyone with it can run the task on this machine while this command runs. Ctrl-C stops sharing.")
+	if isTerminal(os.Stdin) && isTerminal(stdout) {
+		copied := link + "#" + key
+		if *separate {
+			copied = link
+		}
+		fmt.Fprintln(stdout, clipboard(ctx, stdout, copied), "Press Enter to open it in your browser.")
+		go func() {
+			for lines := bufio.NewScanner(os.Stdin); lines.Scan(); {
+				if err := browse(link + "#" + key); err != nil {
+					fmt.Fprintln(stderr, "runlink: could not open a browser:", err)
+				}
+			}
+		}()
+	}
 
 	s := newSharer(ctx, t, registered.Task, secret, stderr)
 	defer s.sessions.Wait()
@@ -143,6 +161,51 @@ func (t terminal) Write(p []byte) (int, error) {
 	b.WriteByte('\n')
 	_, err := io.WriteString(t.w, b.String())
 	return len(p), err
+}
+
+// isTerminal reports whether w is a terminal. /dev/null is a character device
+// too, but has no terminal settings.
+func isTerminal(w any) bool {
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	_, err := unix.IoctlGetTermios(int(f.Fd()), getTermios)
+	return err == nil
+}
+
+// clipboard copies text with the platform's tool or, without one, asks the
+// terminal to through OSC 52, which also reaches the owner's machine over SSH.
+func clipboard(ctx context.Context, term io.Writer, text string) string {
+	// The tools get two seconds together, so a hung one cannot hold up sharing.
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	var tools [][]string
+	switch runtime.GOOS {
+	case "darwin":
+		tools = [][]string{{"pbcopy"}}
+	case "linux":
+		tools = [][]string{{"wl-copy"}, {"xclip", "-selection", "clipboard"}, {"xsel", "--clipboard", "--input"}}
+	}
+	for _, tool := range tools {
+		cmd := exec.CommandContext(ctx, tool[0], tool[1:]...)
+		cmd.Stdin = strings.NewReader(text)
+		cmd.WaitDelay = time.Second
+		if cmd.Run() == nil {
+			return "Copied to the clipboard."
+		}
+	}
+	fmt.Fprintf(term, "\x1b]52;c;%s\a", base64.StdEncoding.EncodeToString([]byte(text)))
+	return "Sent to the terminal's clipboard."
+}
+
+// browse opens url in the owner's default browser.
+func browse(url string) error {
+	name := "xdg-open"
+	if runtime.GOOS == "darwin" {
+		name = "open"
+	}
+	return exec.Command(name, url).Run()
 }
 
 func localHint(origin string) string {

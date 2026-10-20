@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -656,5 +657,60 @@ func TestShareReportsServiceProblems(t *testing.T) {
 		if code := run(t.Context(), args, env("http://127.0.0.1:1"), io.Discard, &stderr); code != 2 {
 			t.Errorf("%q: exit %d: %s", args, code, stderr.String())
 		}
+	}
+}
+
+// Without a clipboard tool, or with a hung one, the link goes to the terminal
+// through OSC 52; with one, the tool gets it on stdin. Enter's opener gets the
+// full link. /dev/null is no terminal, so redirected output copies nothing.
+func TestClipboardAndBrowse(t *testing.T) {
+	null, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer null.Close()
+	if isTerminal(null) || isTerminal(&bytes.Buffer{}) {
+		t.Fatal("/dev/null or a buffer is a terminal")
+	}
+	copier, opener := "xclip", "xdg-open"
+	if runtime.GOOS == "darwin" {
+		copier, opener = "pbcopy", "open"
+	}
+	dir := t.TempDir()
+	t.Setenv("PATH", dir)
+	var term bytes.Buffer
+	if got := clipboard(t.Context(), &term, "link"); got != "Sent to the terminal's clipboard." || term.String() != "\x1b]52;c;bGluaw==\a" {
+		t.Fatalf("without a tool: %q, terminal %q", got, term.String())
+	}
+	if err := browse("http://x/#k"); err == nil {
+		t.Fatal("browse succeeded without an opener")
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, copier), []byte("#!/bin/sh\nexec /bin/sleep 60"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+	if got := clipboard(ctx, &term, "link"); got != "Sent to the terminal's clipboard." || ctx.Err() == nil {
+		t.Fatalf("with a hung %s: %q", copier, got)
+	}
+
+	got := filepath.Join(dir, "got")
+	for name, script := range map[string]string{copier: "exec /bin/cat >" + got, opener: `printf %s "$1" >` + got + ".url"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("#!/bin/sh\n"+script), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	term.Reset()
+	if msg := clipboard(t.Context(), &term, "link"); msg != "Copied to the clipboard." || term.Len() != 0 {
+		t.Fatalf("with %s: %q, terminal %q", copier, msg, term.String())
+	}
+	if err := browse("http://x/#k"); err != nil {
+		t.Fatal(err)
+	}
+	copied, _ := os.ReadFile(got)
+	opened, _ := os.ReadFile(got + ".url")
+	if string(copied) != "link" || string(opened) != "http://x/#k" {
+		t.Fatalf("copied %q, opened %q", copied, opened)
 	}
 }
