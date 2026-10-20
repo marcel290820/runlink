@@ -10,9 +10,10 @@ import (
 )
 
 // view shows the owner what sharing is doing. With cursor control, a status
-// region at the bottom redraws in place: connections and the latest run with
-// its last stderr lines, while earlier runs stay above as one line each.
-// Otherwise each event is a timestamped line on stderr.
+// region at the bottom redraws in place: connections and the latest run. Above
+// it, earlier runs stay as one line each, and every stderr line goes to the
+// scrollback under the start of its run. Otherwise each event is a timestamped
+// line on stderr.
 type view struct {
 	mu  sync.Mutex
 	st  style
@@ -23,9 +24,6 @@ type view struct {
 	origin     string // being connected to, until begin
 	recipients int
 	run        *runView
-	tail       []string // the run's last stderr lines, escaped
-	cut        int      // its earlier lines
-	dirty      bool
 	frame      int
 	stopped    chan struct{}
 }
@@ -35,9 +33,8 @@ type runView struct {
 	took    time.Duration
 	failure *runError
 	over    bool
+	wrote   bool // to stderr, under a line marking the start
 }
-
-const tailLines = 5
 
 func newView(st style, r *region, stdout, stderr io.Writer) *view {
 	v := &view{st: st, out: stdout, log: log.New(terminal{stderr}, "", log.Ltime)}
@@ -72,7 +69,7 @@ func (v *view) animate() {
 		select {
 		case <-v.stopped:
 		default:
-			if v.dirty || v.origin != "" || v.run != nil && !v.run.over {
+			if v.origin != "" || v.run != nil && !v.run.over {
 				v.frame++
 				v.draw(nil)
 			}
@@ -82,7 +79,6 @@ func (v *view) animate() {
 }
 
 func (v *view) draw(done []string) {
-	v.dirty = false
 	v.r.draw(done, v.lines(), -1, 0)
 }
 
@@ -93,15 +89,7 @@ func (v *view) lines() []string {
 	}
 	var lines []string
 	if r := v.run; r != nil {
-		lines = append(lines, v.runLine(r))
-		bar := "      " + st.sym("│", "|") + " "
-		if v.cut > 0 {
-			lines = append(lines, st.sgr(dim, fmt.Sprintf("%s%d earlier lines", bar, v.cut)))
-		}
-		for _, line := range v.tail {
-			lines = append(lines, st.sgr(dim, bar+line))
-		}
-		lines = append(lines, "")
+		lines = append(lines, v.runLine(r), "")
 	}
 	stopped := false
 	select {
@@ -213,11 +201,12 @@ func (v *view) started() {
 	if v.run != nil {
 		done = []string{v.runLine(v.run)}
 	}
-	v.run, v.tail, v.cut = &runView{started: time.Now()}, nil, 0
+	v.run = &runView{started: time.Now()}
 	v.draw(done)
 }
 
-// stderr shows a line the script wrote to stderr; the region keeps the last few.
+// stderr shows a line the script wrote to stderr. It goes to the scrollback
+// in full, so the terminal keeps all of it.
 func (v *view) stderr(line string) {
 	if v.r == nil {
 		v.log.Print("  ", line)
@@ -225,10 +214,12 @@ func (v *view) stderr(line string) {
 	}
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	if v.tail = append(v.tail, escape(line)); len(v.tail) > tailLines {
-		v.tail, v.cut = v.tail[1:], v.cut+1
+	st, done := v.st, []string{}
+	if !v.run.wrote {
+		v.run.wrote = true
+		done = append(done, "  "+st.sgr(dim, st.sym("›", ">")+" "+v.run.started.Format(time.TimeOnly))+"  Started")
 	}
-	v.dirty = true
+	v.draw(append(done, st.sgr(dim, "      "+st.sym("│", "|")+" "+escape(line))))
 }
 
 func (v *view) finished(took time.Duration, failure *runError) {

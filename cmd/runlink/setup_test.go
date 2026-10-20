@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -468,4 +470,57 @@ func TestFitKeepsLinesToOneRow(t *testing.T) {
 			t.Errorf("fit(%q, %d) = %q", c.line, c.n, got)
 		}
 	}
+}
+
+func TestEveryStderrLineStaysInTheScrollback(t *testing.T) {
+	var out lockedBuffer
+	st := style{live: true}
+	v := newView(st, &region{w: &out, st: st, width: func() int { return 40 }}, &out, io.Discard)
+	v.begin([]string{"header"})
+	want := []string{"header", "> ", "Started"}
+	v.started()
+	for i := range 12 { // more than a screen region shows, each wider than the terminal
+		line := strconv.Itoa(i) + " " + strings.Repeat("x", 60)
+		v.stderr(line)
+		want = append(want, "| "+line)
+	}
+	v.finished(time.Second, &runError{Code: "failed", cause: errors.New("exit status 1")})
+	v.started() // a silent run stays one line
+	v.finished(time.Second, nil)
+	v.close()
+	got := strings.Join(rendered(out.String()), "\n")
+	for rest, i := got, 0; i < len(want); i++ {
+		at := strings.Index(rest, want[i])
+		if at < 0 {
+			t.Fatalf("missing %q in order:\n%s", want[i], got)
+		}
+		rest = rest[at+len(want[i]):]
+	}
+	if !strings.Contains(got, "Failed after 1.0s: exit status 1\n  + ") || strings.Count(got, "Started") != 1 {
+		t.Fatalf("runs:\n%s", got)
+	}
+}
+
+// rendered is what a terminal holds after the region's writes, scrollback
+// included: lines are not wrapped, so a line cut short shows.
+func rendered(s string) []string {
+	lines, row := []string{}, 0
+	for _, part := range regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]|\r|\n|[^\x1b\r\n]+`).FindAllString(s, -1) {
+		for len(lines) <= row {
+			lines = append(lines, "")
+		}
+		switch {
+		case part == "\n":
+			row++
+		case part == "\x1b[J":
+			lines = lines[:row]
+		case strings.HasPrefix(part, "\x1b[") && strings.HasSuffix(part, "A"):
+			n, _ := strconv.Atoi(part[2 : len(part)-1])
+			row -= n
+		case part == "\r" || part[0] == '\x1b': // each draw starts a line; styles and the cursor change nothing here
+		default:
+			lines[row] += part
+		}
+	}
+	return lines
 }

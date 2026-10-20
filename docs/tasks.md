@@ -24,9 +24,10 @@ opens the full link in your default browser.
 
 The terminal shows the task, the link, and below them a status that redraws in
 place: how many recipients are connected and the latest run, running, finished, or
-failed with its duration, with its last stderr lines indented under it. Earlier
-runs stay above as one line each. Stderr is shown with control characters escaped,
-because it can echo recipient input. Color marks state and nothing else;
+failed with its duration. Earlier runs stay above as one line each. Every line a
+run writes to stderr goes above the status as it arrives, indented under a line
+marking the run's start, so the terminal's scrollback keeps all of it. Stderr is
+shown with control characters escaped, because it can echo recipient input. Color marks state and nothing else;
 `NO_COLOR` turns it off, a locale that is not UTF-8 gets ASCII symbols, and
 `TERM=dumb` or redirected output gets plain lines: the link on stdout and one
 timestamped line per connection, run, and stderr line on stderr, so a log keeps
