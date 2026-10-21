@@ -1,5 +1,15 @@
 # Repository Guidelines
 
+## Promise to Owners: Runlink Adapts to the Script
+
+This is the product's hardest requirement. It overrides convenience, a tidier design, and any spec that conflicts with it.
+
+- Runlink works with every script as it is. Never require a script to change, or its owner to follow a convention, such as argument order, named or positional parameters, an input style, a file layout, or the executable bit, before it can be shared.
+- Never make anything impossible for an owner. A guard that protects the owner, such as refused environment variables or option-like values, stays the default, but the owner can always turn it off explicitly. Show the risk once, clearly and in one line, and do not repeat it in the way.
+- Design from how real scripts behave: list the common ways they take input and run, and cover all of them. Rare, hard cases may wait, but name each one to the user instead of silently leaving it out.
+- When Runlink could guess wrong, such as matching a script to its saved answers by anything less than its full path, it asks the owner instead of deciding silently.
+- Recipient safety limits that protect the recipient's browser, such as the size of a result, are not owner restrictions; changing one is a decision for the user.
+
 ## Project Structure & Module Organization
 
 Runlink has a development and shipping scaffold and a local proof of concept of sharing a task. `VISION.md` defines the product, and `RATIONALE.md` explains its focus: `optional input -> task function -> output`, executed on the owner's machine for browser-only recipients.
