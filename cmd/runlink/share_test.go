@@ -517,6 +517,23 @@ func TestFileInputs(t *testing.T) {
 		t.Fatalf("after a stalled upload: %q %+v", output, failure)
 	}
 
+	// An empty list of files is no file, and the session goes on.
+	if tk, err = loadTask(writeTask(t, `echo "$# $*"`, `{"title": "T", "command": ["./task.sh", "{docs}"],
+		"inputs": [{"name": "docs", "type": "file", "multiple": true}], "output": {"kind": "text"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	b = direct(t, newSharer(t.Context(), tk, id, secret, plainView(io.Discard)))
+	b.authenticate(t, secret, id, "", "")
+	if _, ok := b.accepted(t); !ok {
+		t.Fatal("the task was refused")
+	}
+	if _, output, failure := b.run(t, map[string]any{"docs": []any{}}); failure != nil || output != "0 \n" {
+		t.Fatalf("an empty list of files: %q %+v", output, failure)
+	}
+	if _, output, failure := b.run(t, map[string]any{"docs": []any{map[string]any{"name": "a", "size": 1.0}}}, []byte("x")); failure != nil || !strings.HasPrefix(output, "1 /") {
+		t.Fatalf("after an empty list of files: %q %+v", output, failure)
+	}
+
 	// Files of inputs whose names differ only in case stay apart on a
 	// case-insensitive file system, as macOS has by default.
 	if tk, err = loadTask(writeTask(t, `cat "$1" "$2"`, `{"title": "T", "command": ["./task.sh", "{Doc}", "{doc}"],

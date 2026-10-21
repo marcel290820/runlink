@@ -297,16 +297,57 @@ try {
   }, gui);
   assert.equal(new Set(tops).size, 1, `the wire moved: ${tops}`);
 
+  // A field of several values takes a numbered row per value, chips for several
+  // choices, or any number of files, and sends each list in order.
+  await page.evaluate(installTask, { title: 'Lists', inputs: [
+    { name: 'tags', type: 'text', label: 'Tags', multiple: true, required: true },
+    { name: 'days', type: 'date', label: 'Days', multiple: true, default: ['2026-10-20'] },
+    { name: 'only', type: 'choice', label: 'Only', multiple: true, options: ['a', { value: 2, label: 'Two' }, 'c'], default: ['c'] },
+    { name: 'docs', type: 'file', label: 'Docs', multiple: true, accept: '.txt' },
+  ] });
+  await page.evaluate(async data => (await import('/assets/loader.mjs')).mountGUI(new Uint8Array(data), window.task), gui);
+  assert.equal(await page.locator('.optional').count(), 3);
+  await page.locator('.run').click();
+  assert.equal(await calls(), 0);
+  assert.match(await page.locator('#input-0-error').textContent(), /Enter a value/);
+  const tags = page.locator('.field', { has: page.locator('#input-0') });
+  await page.locator('#input-0').fill('first');
+  for (const [i, text] of [[1, 'second'], [2, 'dropped']]) {
+    await tags.getByRole('button', { name: 'Add another' }).click();
+    assert.equal(await page.evaluate(() => document.activeElement.id), `input-0-${i}`);
+    await page.locator(`#input-0-${i}`).fill(text);
+  }
+  await tags.getByRole('button', { name: 'Remove value 3' }).click();
+  assert.equal(await tags.locator('.row').count(), 2);
+  await page.locator('.checks label', { hasText: 'Two' }).click();
+  const txt = name => ({ name, mimeType: 'text/plain', buffer: Buffer.from(name) });
+  await page.locator('#input-3').setInputFiles([txt('a.txt'), txt('b.txt')]);
+  await page.locator('#input-3').setInputFiles([txt('c.csv')]); // adds to the files, and is refused
+  assert.equal(await page.locator('.pick').count(), 3);
+  await page.locator('.run').click();
+  assert.equal(await calls(), 0);
+  assert.match(await page.locator('#input-3-error').textContent(), /c\.csv isn't a \.txt file/);
+  await page.getByRole('button', { name: 'Remove c.csv' }).click();
+  await page.locator('.run').click();
+  assert.deepEqual(await page.evaluate(() => {
+    const { docs, ...rest } = window.calls[0].values;
+    return { ...rest, docs: docs.map(file => file.name) };
+  }), { tags: ['first', 'second'], days: ['2026-10-20'], only: [2, 'c'], docs: ['a.txt', 'b.txt'] });
+  const receipts = await page.locator('.shown').allTextContents();
+  assert.deepEqual([receipts[0], ...receipts.slice(2)], ['first, second', 'Two, c', 'a.txt, b.txt']);
+  await page.evaluate(() => window.calls[0].resolve([]));
+
   // A definition the GUI does not understand, down to one property's type, fails loudly instead of rendering.
   assert.deepEqual(await page.evaluate(async data => {
     const { mountGUI } = await import('/assets/loader.mjs');
     const inputs = [{ name: 'a', type: 'html' }, { name: 'a', type: ['text'] }, { name: 'a', type: 'file', accept: 5 },
       { name: 'a', type: 'choice', options: [{ value: {} }] }, { name: 'a', type: 'date', default: 'tomorrow' },
       { name: 'a', type: 'date', default: '2026-13-01' }, { name: 'a', type: 'date', max: '2026-02-30' },
-      { name: 'a', type: 'date', default: '0000-01-01' }, { name: 'a', type: 'date', min: '0000-01-01' }, { name: 'a', type: 'date', max: '0000-12-31' }];
+      { name: 'a', type: 'date', default: '0000-01-01' }, { name: 'a', type: 'date', min: '0000-01-01' }, { name: 'a', type: 'date', max: '0000-12-31' },
+      { name: 'a', type: 'boolean', multiple: true }, { name: 'a', type: 'text', multiple: true, default: 'x' }, { name: 'a', type: 'text', multiple: 'yes' }];
     return Promise.all(inputs.map(input => mountGUI(new Uint8Array(data), { definition: { title: 'x', inputs: [input] }, run() {} })
       .then(() => 'mounted', error => error.message)));
-  }, gui), Array(10).fill('Unsupported task definition'));
+  }, gui), Array(13).fill('Unsupported task definition'));
   // CSP refusals, such as a blocked font, surface only as console errors.
   assert.deepEqual(logged, []);
 
@@ -331,7 +372,7 @@ try {
   assert.equal((await fetch(`${origin}/assets/loader.mjs`, { headers: { 'Service-Worker': 'script' } })).status, 403);
   assert.deepEqual(errors, []);
   console.log('Chromium: fragment cleanup, reload, secret entry, fonts, GUI verification, input checks, run states, ' +
-    'download-only files, ingress and worker isolation passed');
+    'download-only files, fields of several values, ingress and worker isolation passed');
 } finally {
   // Every teardown step runs even when another fails; the first failure is reported.
   upstream.close();

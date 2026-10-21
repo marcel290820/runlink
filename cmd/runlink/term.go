@@ -390,6 +390,11 @@ func (a *asker) note(hint, problem string) []string {
 // it. Without color it is ordinary text. check says what is wrong with an
 // answer, shown until the owner edits it.
 func (a *asker) text(label, suggestion, hint string, check func(string) string) (string, error) {
+	return a.line(label, suggestion, hint, check, true)
+}
+
+// line is text, with the answer's surrounding spaces kept unless trim is set.
+func (a *asker) line(label, suggestion, hint string, check func(string) string, trim bool) (string, error) {
 	value, fresh, problem := []rune(suggestion), a.st.color && suggestion != "", ""
 	for {
 		shown := escape(string(value)) // a stored answer may hold control characters
@@ -409,7 +414,10 @@ func (a *asker) text(label, suggestion, hint string, check func(string) string) 
 		case keyCancel:
 			return "", errCanceled
 		case keyEnter:
-			answer := strings.TrimSpace(string(value))
+			answer := string(value)
+			if trim {
+				answer = strings.TrimSpace(answer)
+			}
 			if string(value) == suggestion {
 				answer = suggestion // untouched, so exactly as it was
 			}

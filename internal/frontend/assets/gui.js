@@ -8,12 +8,14 @@
 //   owner: the owner's display name, as in "Dana's machine"
 //   output: { kind: 'text' | 'json' | 'file', label? }; label is a noun phrase, "a CSV report"
 //   inputs: [{ name, type, label?, help?, placeholder?, required?, default?,
-//              min?, max?, step?, maxLength?, options?, accept?, maxBytes? }]
+//              min?, max?, step?, maxLength?, options?, accept?, maxBytes?, multiple? }]
 //   type: text | multiline | number | date | boolean | choice | file
 //   options: [value] or [{ value, label? }], where each value is a string, number, or boolean
+//   multiple: the field takes several values, and its default is a list; never a boolean
 //   Dates are YYYY-MM-DD strings. A property of the wrong type fails the whole definition.
 // task.run(values, onProgress) settles when the run does. values maps each field name
-// to its value; empty optional fields are left out and files are File objects.
+// to its value, or a list of them for a multiple field; empty optional fields are left
+// out and files are File objects.
 //   onProgress({ stage: 'accepted' }) or onProgress({ stage: 'running', message?, fraction? })
 //   resolves to [{ kind: 'text' | 'json', label?, value } | { kind: 'file', label?, name, blob }]
 //   rejects with an Error whose code is invalid (with fields: { name: message }), failed,
@@ -37,6 +39,7 @@
     file: 'M6 3h8l4 4v14H6zM14 3v4h4',
     key: 'M11 12.5 20 3.5M16.5 7l2.5 2.5M14 9.5l2 2M8 20.5a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9z',
     lock: 'M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5z',
+    plus: 'M12 5v14M5 12h14',
     text: 'M5 6h14M5 10h14M5 14h10M5 18h7',
     upload: 'M12 16V5M7 10l5-5 5 5M5 20h14',
   };
@@ -181,15 +184,16 @@
   const maybe = test => value => value == null || test(value);
   // What each input type's value, and so its default, must be.
   const TYPES = { text: isText, multiline: isText, number: Number.isFinite, date: isDate, boolean: isFlag, choice: isPlain, file: () => false };
-  const SPEC = { label: isText, help: isText, placeholder: isText, accept: isText, required: isFlag, step: isPositive,
+  const SPEC = { label: isText, help: isText, placeholder: isText, accept: isText, required: isFlag, multiple: isFlag, step: isPositive,
     maxLength: value => Number.isInteger(value) && value > 0, maxBytes: isPositive };
   const isOption = option => isPlain(option) || option !== null && typeof option === 'object' && isPlain(option.value) && maybe(isText)(option.label);
 
   function validSpec(spec) {
     if (!isText(spec?.name) || !spec.name || !isText(spec.type) || !Object.hasOwn(TYPES, spec.type)) return false;
     const bound = maybe(spec.type === 'date' ? isDate : Number.isFinite);
-    return Object.entries(SPEC).every(([key, test]) => maybe(test)(spec[key])) && maybe(TYPES[spec.type])(spec.default) &&
-      bound(spec.min) && bound(spec.max) &&
+    const value = spec.multiple ? list => Array.isArray(list) && list.every(TYPES[spec.type]) : TYPES[spec.type];
+    return Object.entries(SPEC).every(([key, test]) => maybe(test)(spec[key])) && maybe(value)(spec.default) &&
+      !(spec.multiple && spec.type === 'boolean') && bound(spec.min) && bound(spec.max) &&
       (spec.type !== 'choice' || Array.isArray(spec.options) && spec.options.length > 0 && spec.options.every(isOption));
   }
 
@@ -225,52 +229,117 @@
         : { value: option.value, label: option.label || plain(option.value) });
       chosen = options.findIndex(option => option.value === spec.default);
       // A picked radio cannot be cleared, so an optional choice without a preset offers None.
-      if (chosen < 0 && !spec.required) { options.unshift({ label: 'None' }); chosen = 0; }
+      if (chosen < 0 && !spec.required && !spec.multiple) { options.unshift({ label: 'None' }); chosen = 0; }
     }
     // A switch, or a choice that starts selected, always has a value, so neither is marked optional.
-    const preset = spec.type === 'choice' && options[chosen]?.value !== undefined;
+    const preset = spec.type === 'choice' && !spec.multiple && options[chosen]?.value !== undefined;
     const title = [label, spec.required || spec.type === 'boolean' || preset ? null : el('span', { class: 'optional', text: 'optional' })];
     const common = { id, 'aria-describedby': describedby, required: spec.required === true };
-    let node, control, read, marked;
+    let node, control, read, marked, target;
+
+    // One value of a text, number, or date field: its control, and how to read it.
+    // A field of several values has one per row, each optional on its own.
+    const entry = (attrs, value, required) => {
+      let control, read;
+      switch (spec.type) {
+        case 'text':
+        case 'multiline':
+          control = spec.type === 'text'
+            ? el('input', { ...attrs, class: 'control', type: 'text', autocomplete: 'off', placeholder: spec.placeholder, maxlength: spec.maxLength })
+            : el('textarea', { ...attrs, class: 'control', rows: 4, placeholder: spec.placeholder, maxlength: spec.maxLength });
+          control.value = value ?? '';
+          read = () => {
+            const value = control.value;
+            if (!value.trim()) return required ? { error: 'Enter a value.' } : {};
+            if (spec.maxLength && value.length > spec.maxLength) return { error: `Use ${spec.maxLength} characters or fewer.` };
+            return { value };
+          };
+          break;
+        case 'number':
+          control = el('input', { ...attrs, class: 'control', type: 'number', inputmode: 'decimal', placeholder: spec.placeholder,
+            min: spec.min, max: spec.max, step: spec.step ?? 'any' });
+          control.value = value == null ? '' : String(value);
+          read = () => {
+            if (control.validity.badInput) return { error: 'Enter a number.' };
+            if (control.value === '') return required ? { error: 'Enter a number.' } : {};
+            if (control.validity.rangeUnderflow || control.validity.rangeOverflow) return { error: range(spec, 'number') };
+            if (control.validity.stepMismatch) return { error: spec.step === 1 ? 'Use a whole number.' : `Use steps of ${spec.step}.` };
+            return { value: Number(control.value) };
+          };
+          break;
+        case 'date':
+          control = el('input', { ...attrs, class: 'control', type: 'date', min: spec.min, max: spec.max });
+          control.value = value ?? '';
+          read = () => {
+            if (control.validity.badInput) return { error: 'Enter a complete date.' };
+            if (!control.value) return required ? { error: 'Choose a date.' } : {};
+            if (control.validity.rangeUnderflow || control.validity.rangeOverflow) return { error: range(spec, 'date') };
+            // The receipt shows the date as the field did, in the reader's own format.
+            const text = control.valueAsDate.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'UTC' });
+            return { value: control.value, text };
+          };
+          break;
+      }
+      return { control, read };
+    };
 
     switch (spec.type) {
       case 'text':
       case 'multiline':
-        control = spec.type === 'text'
-          ? el('input', { ...common, class: 'control', type: 'text', autocomplete: 'off', placeholder: spec.placeholder, maxlength: spec.maxLength })
-          : el('textarea', { ...common, class: 'control', rows: 4, placeholder: spec.placeholder, maxlength: spec.maxLength });
-        control.value = spec.default ?? '';
-        read = () => {
-          const value = control.value;
-          if (!value.trim()) return spec.required ? { error: 'Enter a value.' } : {};
-          if (spec.maxLength && value.length > spec.maxLength) return { error: `Use ${spec.maxLength} characters or fewer.` };
-          return { value };
-        };
-        break;
       case 'number':
-        control = el('input', { ...common, class: 'control', type: 'number', inputmode: 'decimal', placeholder: spec.placeholder,
-          min: spec.min, max: spec.max, step: spec.step ?? 'any' });
-        control.value = spec.default == null ? '' : String(spec.default);
-        read = () => {
-          if (control.validity.badInput) return { error: 'Enter a number.' };
-          if (control.value === '') return spec.required ? { error: 'Enter a number.' } : {};
-          if (control.validity.rangeUnderflow || control.validity.rangeOverflow) return { error: range(spec, 'number') };
-          if (control.validity.stepMismatch) return { error: spec.step === 1 ? 'Use a whole number.' : `Use steps of ${spec.step}.` };
-          return { value: Number(control.value) };
+      case 'date': {
+        if (!spec.multiple) {
+          ({ control, read } = entry(common, spec.default, spec.required));
+          break;
+        }
+        // Several values: a numbered row for each, as the arguments they become.
+        const rows = el('div', { class: 'rows' });
+        const entries = [];
+        const relabel = () => entries.forEach((item, i) => {
+          item.control.id = i ? `${id}-${i}` : id;
+          item.control.setAttribute('aria-label', `${label}, value ${i + 1}`);
+          item.remove.setAttribute('aria-label', `Remove value ${i + 1}`);
+        });
+        const add = (value, focus) => {
+          const item = entry({ 'aria-describedby': describedby }, value, false);
+          item.remove = el('button', { class: 'remove', type: 'button', onclick: () => {
+            const at = entries.indexOf(item);
+            if (entries.length === 1) item.control.value = '';
+            else {
+              entries.splice(at, 1);
+              item.row.remove();
+              relabel();
+            }
+            invalid('');
+            entries[Math.min(at, entries.length - 1)].control.focus();
+          } }, icon('close'));
+          item.row = el('div', { class: 'row' }, item.control, item.remove);
+          entries.push(item);
+          rows.append(item.row);
+          relabel();
+          if (focus) item.control.focus();
         };
-        break;
-      case 'date':
-        control = el('input', { ...common, class: 'control', type: 'date', min: spec.min, max: spec.max });
-        control.value = spec.default ?? '';
+        for (const value of spec.default?.length ? spec.default : [undefined]) add(value, false);
+        const more = el('button', { class: 'quiet add', type: 'button', onclick: () => add(undefined, true) }, icon('plus'), 'Add another');
+        node = el('div', { class: 'field' }, el('label', { for: id }, ...title), el('div', { class: 'slot' }, rows, more, shown), help, error);
+        marked = () => entries.map(item => item.control);
         read = () => {
-          if (control.validity.badInput) return { error: 'Enter a complete date.' };
-          if (!control.value) return spec.required ? { error: 'Choose a date.' } : {};
-          if (control.validity.rangeUnderflow || control.validity.rangeOverflow) return { error: range(spec, 'date') };
-          // The receipt shows the date as the field did, in the reader's own format.
-          const text = control.valueAsDate.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'UTC' });
-          return { value: control.value, text };
+          const values = [];
+          for (const item of entries) {
+            const got = item.read();
+            if (got.error) {
+              target = item.control;
+              return got;
+            }
+            if (got.value !== undefined) values.push(got);
+          }
+          target = entries[0].control;
+          if (!values.length) return spec.required ? { error: 'Enter a value.' } : {};
+          return { value: values.map(got => got.value), text: values.map(got => got.text ?? plain(got.value)).join(', ') };
         };
+        control = { focus: () => (target ?? entries[0].control).focus() };
         break;
+      }
       case 'boolean':
         control = el('input', { ...common, class: 'switch', type: 'checkbox', role: 'switch', required: false });
         control.checked = spec.default === true;
@@ -278,7 +347,23 @@
         read = () => ({ value: control.checked });
         break;
       case 'choice':
-        if (options.length <= 4 && options.every(option => option.label.length <= 16)) {
+        if (spec.multiple) {
+          // Several choices: a chip for each option, inked in when picked.
+          const boxes = options.map((option, i) => el('input', { type: 'checkbox', name: id, value: i,
+            checked: spec.default?.includes(option.value) }));
+          control = boxes[0];
+          marked = boxes;
+          node = el('fieldset', { class: 'field', 'aria-describedby': describedby }, el('legend', {}, ...title),
+            el('div', { class: 'slot' },
+              el('div', { class: 'checks' }, ...options.map((option, i) => el('label', {}, boxes[i], el('span', { text: option.label })))),
+              shown),
+            help, error);
+          read = () => {
+            const picked = options.filter((_, i) => boxes[i].checked);
+            if (!picked.length) return spec.required ? { error: 'Choose at least one.' } : {};
+            return { value: picked.map(option => option.value), text: picked.map(option => option.label).join(', ') };
+          };
+        } else if (options.length <= 4 && options.every(option => option.label.length <= 16)) {
           const radios = options.map((option, i) => el('input', { type: 'radio', name: id, value: i, checked: i === chosen }));
           control = radios[Math.max(chosen, 0)];
           marked = radios;
@@ -305,48 +390,54 @@
         break;
       case 'file': {
         const allowed = tokens(spec.accept);
-        const limits = [allowed.length ? listed(allowed, 'or') : null, spec.maxBytes ? `up to ${bytes(spec.maxBytes)}` : null].filter(Boolean);
+        const limits = [allowed.length ? listed(allowed, 'or') : null, spec.maxBytes ? `up to ${bytes(spec.maxBytes)}${spec.multiple ? ' each' : ''}` : null].filter(Boolean);
         const hint = limits.length ? el('small', { id: `${id}-limits`, text: limits.join(', ') }) : null;
         // The input stays in the tab order whichever view shows; its focus and error draw on that view.
-        control = el('input', { ...common, class: 'file', type: 'file', accept: spec.accept,
+        control = el('input', { ...common, class: 'file', type: 'file', accept: spec.accept, multiple: spec.multiple === true,
           'aria-describedby': [hint?.id, describedby].filter(Boolean).join(' ') });
         const drop = el('div', { class: 'drop', onclick: () => control.click() }, icon('upload'),
-          el('strong', {}, el('span', { text: 'Choose a file' }), ' or drop it here'), hint);
+          el('strong', {}, el('span', { text: spec.multiple ? 'Choose files' : 'Choose a file' }), spec.multiple ? ' or drop them here' : ' or drop it here'), hint);
         const picked = el('div', { class: 'picked', hidden: true });
+        let picks = [];
         const update = () => {
-          const file = control.files[0];
-          drop.hidden = Boolean(file);
-          picked.hidden = !file;
-          if (!file) return;
-          picked.replaceChildren(icon('file'), el('span', { text: file.name }, el('small', { text: bytes(file.size) })),
+          picks = [...control.files];
+          drop.hidden = !spec.multiple && picks.length > 0;
+          picked.hidden = !picks.length;
+          picked.replaceChildren(...picks.map((file, i) => el('div', { class: 'pick' }, icon('file'),
+            el('span', { text: file.name }, el('small', { text: bytes(file.size) })),
             el('button', { type: 'button', 'aria-label': `Remove ${file.name}`, onclick: () => {
-              control.value = '';
-              update();
+              keep(picks.filter((_, j) => j !== i));
               invalid('');
               control.focus();
-            } }, icon('close')));
+            } }, icon('close')))));
         };
-        control.addEventListener('change', update);
-        const slot = el('div', { class: 'slot' }, control, drop, picked, shown);
+        // The input holds every picked file; picking or dropping more adds to them when the field takes several.
+        const keep = files => {
+          const transfer = new DataTransfer();
+          for (const file of files) transfer.items.add(file);
+          control.files = transfer.files;
+          update();
+        };
+        control.addEventListener('change', () => spec.multiple ? keep([...picks, ...control.files]) : update());
+        const slot = el('div', { class: 'slot' }, control, picked, drop, shown);
         slot.addEventListener('dragover', event => { event.preventDefault(); drop.classList.add('over'); });
         slot.addEventListener('dragleave', () => drop.classList.remove('over'));
         slot.addEventListener('drop', event => {
           event.preventDefault();
           drop.classList.remove('over');
-          const [file] = event.dataTransfer.files;
-          if (!file || control.matches(':disabled')) return;
-          const transfer = new DataTransfer();
-          transfer.items.add(file);
-          control.files = transfer.files;
-          control.dispatchEvent(new Event('change', { bubbles: true }));
+          const files = [...event.dataTransfer.files];
+          if (!files.length || control.matches(':disabled')) return;
+          keep(spec.multiple ? [...picks, ...files] : files.slice(0, 1));
+          invalid('');
         });
         node = el('div', { class: 'field' }, el('label', { for: id }, ...title), slot, help, error);
         read = () => {
-          const file = control.files[0];
-          if (!file) return spec.required ? { error: 'Choose a file.' } : {};
-          if (!accepts(spec.accept, file)) return { error: `Choose a ${listed(allowed, 'or')} file.` };
-          if (spec.maxBytes && file.size > spec.maxBytes) return { error: `This file is ${bytes(file.size)}. The limit is ${bytes(spec.maxBytes)}.` };
-          return { value: file, text: file.name };
+          if (!picks.length) return spec.required ? { error: 'Choose a file.' } : {};
+          const wrong = picks.find(file => !accepts(spec.accept, file));
+          if (wrong) return { error: picks.length > 1 ? `${wrong.name} isn't a ${listed(allowed, 'or')} file.` : `Choose a ${listed(allowed, 'or')} file.` };
+          const large = picks.find(file => spec.maxBytes && file.size > spec.maxBytes);
+          if (large) return { error: `${picks.length > 1 ? large.name : 'This file'} is ${bytes(large.size)}. The limit is ${bytes(spec.maxBytes)}.` };
+          return spec.multiple ? { value: picks, text: picks.map(file => file.name).join(', ') } : { value: picks[0], text: picks[0].name };
         };
         break;
       }
@@ -357,12 +448,12 @@
 
     function invalid(message) {
       error.replaceChildren(...message ? [icon('alert'), el('span', { text: message })] : []);
-      for (const target of marked) {
+      for (const target of typeof marked === 'function' ? marked() : marked) {
         if (message) target.setAttribute('aria-invalid', 'true'); else target.removeAttribute('aria-invalid');
       }
     }
     const lock = ({ value, text }) => {
-      shown.textContent = value === undefined ? 'None' : text ?? plain(value);
+      shown.textContent = value === undefined ? 'None' : text ?? [value].flat().map(plain).join(', ');
       shown.classList.toggle('empty', value === undefined);
     };
     node.addEventListener('input', () => invalid(''));

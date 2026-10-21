@@ -12,12 +12,14 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -166,7 +168,7 @@ func share(ctx context.Context, origin string, args []string, getenv func(string
 		copied = clipboard(ctx, stdout, what)
 		open.Store(&full)
 	}
-	v.begin(header(st, t.Title, link, key, from, path, copied, *separate))
+	v.begin(header(st, t.Title, link, key, from, path, copied, *separate, risks(t)))
 
 	s := newSharer(ctx, t, registered.Task, secret, v)
 	defer s.sessions.Wait()
@@ -195,15 +197,19 @@ func share(ctx context.Context, origin string, args []string, getenv func(string
 	return 0
 }
 
-// header is what share shows above the status: the task, its link, and how
-// to use it. Without cursor control it keeps the plain wording.
-func header(st style, title, link, key, from, path, copied string, separate bool) []string {
+// header is what share shows above the status: the task, its link, how to use
+// it, and any guard the owner turned off. Without cursor control it keeps the
+// plain wording.
+func header(st style, title, link, key, from, path, copied string, separate bool, risk string) []string {
 	if !st.live {
 		lines := []string{fmt.Sprintf("Sharing %q. Send this link:", title), "", "  " + link + "#" + key, ""}
 		if separate {
 			lines = []string{fmt.Sprintf("Sharing %q. Send the link and the secret separately:", title), "", "  Link    " + link, "  Secret  " + key, ""}
 		}
 		lines = append(lines, "Anyone with it can run the task on this machine while this command runs. Ctrl-C stops sharing.")
+		if risk != "" {
+			lines = append(lines, "Unsafe by the task file's choice: "+risk+".")
+		}
 		if copied != "" {
 			lines = append(lines, copied+" Press Enter to open it in your browser.")
 		}
@@ -227,7 +233,11 @@ func header(st style, title, link, key, from, path, copied string, separate bool
 		}
 		lines = append(lines, "  "+st.sgr(green, st.sym("✓", "+"))+" "+strings.TrimSuffix(copied, ".")+dot+opens)
 	}
-	return append(lines, "  "+st.sgr(dim, "Anyone with the link can run this task on this machine until you stop."), "")
+	lines = append(lines, "  "+st.sgr(dim, "Anyone with the link can run this task on this machine until you stop."))
+	if risk != "" {
+		lines = append(lines, "  "+st.sgr(yellow, st.sym("⚠", "!")+" Unsafe by your choice: "+risk))
+	}
+	return append(lines, "")
 }
 
 // isTerminal reports whether w is a terminal. /dev/null is a character device
@@ -412,6 +422,11 @@ func (s *sharer) serve(ch datachannel.ReadWriteCloserDeadliner, pc *webrtc.PeerC
 func (s *sharer) execute(ch datachannel.ReadWriteCloserDeadliner, values map[string]any) error {
 	args, problems := s.task.check(values)
 	if len(problems) > 0 {
+		for _, name := range slices.Sorted(maps.Keys(problems)) {
+			if problems[name] == dashProblem {
+				s.view.notice(`Refused a value for ` + escape(name) + ` that starts with -, as the script could take it for an option; "unsafe": true on the input allows it.`)
+			}
+		}
 		return send(ch, map[string]any{"error": &runError{Code: "invalid", Fields: problems}})
 	}
 	if !s.running.TryLock() {
@@ -479,55 +494,76 @@ func (s *sharer) execute(ch datachannel.ReadWriteCloserDeadliner, values map[str
 
 // receive accepts the run and stores its files, which the browser then sends in
 // input order as binary messages. Each keeps its name in a directory named by
-// its input's position, as input names may differ only in case, under a new
-// directory that the caller removes. Values and arguments get the files' paths.
-func (s *sharer) receive(ctx context.Context, ch datachannel.ReadWriteCloserDeadliner, values map[string]any, args map[string]string) (dir string, err error) {
+// its input's position and its own, as names may differ only in case, under a
+// new directory that the caller removes. Values and arguments get the files' paths.
+func (s *sharer) receive(ctx context.Context, ch datachannel.ReadWriteCloserDeadliner, values map[string]any, args map[string][]string) (dir string, err error) {
 	if err := send(ch, map[string]string{"stage": "accepted"}); err != nil {
 		return "", err
 	}
 	var buf []byte
 	for i, in := range s.task.Inputs {
-		file, ok := values[in.Name].(map[string]any)
+		announced, ok := values[in.Name]
 		if in.Type != "file" || !ok {
 			continue
 		}
-		if dir == "" {
-			deadline, _ := ctx.Deadline()
-			if err := ch.SetReadDeadline(deadline); err != nil {
-				return "", err
+		files, several := announced.([]any) // check made sure of the rest
+		if !several {
+			files = []any{announced}
+		}
+		if len(files) == 0 {
+			continue // an empty list is no value
+		}
+		var paths []string
+		for j, file := range files {
+			if dir == "" {
+				deadline, _ := ctx.Deadline()
+				if err := ch.SetReadDeadline(deadline); err != nil {
+					return "", err
+				}
+				defer ch.SetReadDeadline(time.Time{})
+				if dir, err = os.MkdirTemp("", "runlink-run-"); err != nil {
+					return "", err
+				}
+				buf = make([]byte, maxMessage)
 			}
-			defer ch.SetReadDeadline(time.Time{})
-			if dir, err = os.MkdirTemp("", "runlink-run-"); err != nil {
-				return "", err
+			path, err := store(ch, buf, filepath.Join(dir, strconv.Itoa(i), strconv.Itoa(j)), file.(map[string]any))
+			if err != nil {
+				return dir, fmt.Errorf("receiving a file: %w", err)
 			}
-			buf = make([]byte, maxMessage)
+			paths = append(paths, path)
 		}
-		path := filepath.Join(dir, strconv.Itoa(i), file["name"].(string))
-		if err := os.Mkdir(filepath.Dir(path), 0o700); err != nil {
-			return dir, err
+		values[in.Name], args[in.Name] = paths[0], paths
+		if several {
+			values[in.Name] = paths
 		}
-		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-		if err != nil {
-			return dir, err
-		}
-		for left := int(file["size"].(float64)); left > 0 && err == nil; {
-			n, text, readErr := ch.ReadDataChannel(buf)
-			switch {
-			case readErr != nil:
-				err = readErr
-			case text || n > left:
-				err = errors.New("the browser sent more than the file it announced")
-			default:
-				_, err = f.Write(buf[:n])
-				left -= n
-			}
-		}
-		if err = errors.Join(err, f.Close()); err != nil {
-			return dir, fmt.Errorf("receiving a file: %w", err)
-		}
-		values[in.Name], args[in.Name] = path, path
 	}
 	return dir, nil
+}
+
+// store writes the next file the browser sends into a new directory dir, under
+// the name it announced, and returns its path.
+func store(ch datachannel.ReadWriteCloserDeadliner, buf []byte, dir string, file map[string]any) (string, error) {
+	path := filepath.Join(dir, file["name"].(string))
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", err
+	}
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return "", err
+	}
+	for left := int64(file["size"].(float64)); left > 0 && err == nil; {
+		n, text, readErr := ch.ReadDataChannel(buf)
+		switch {
+		case readErr != nil:
+			err = readErr
+		case text || int64(n) > left:
+			err = errors.New("the browser sent more than the file it announced")
+		default:
+			_, err = f.Write(buf[:n])
+			left -= int64(n)
+		}
+	}
+	return path, errors.Join(err, f.Close())
 }
 
 func truncate(s string, n int) string {

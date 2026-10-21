@@ -3,7 +3,9 @@
 ## Status
 
 Accepted. Recorded 2026-10-21. Supersedes the "typed fields mapped to arguments
-or JSON stdin" row of [ADR 0001](0001-owner-local-tasks.md).
+or JSON stdin" row of [ADR 0001](0001-owner-local-tasks.md). [ADR 0011](0011-adapt-to-the-script.md)
+lets owners pass refused variables, adds several values, boolean texts and
+fixed variables, and lifts the owner-side limits.
 
 ## Context
 

@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -20,11 +22,11 @@ func TestLoadTaskRejectsInvalidFiles(t *testing.T) {
 		"two objects":      `{"title": "T", "command": ["./task.sh"]} {}`,
 		"trailing bracket": `{"title": "T", "command": ["./task.sh"]} ]`,
 		"trailing brace":   `{"title": "T", "command": ["./task.sh"]} } x`,
-		"long timeout":     `{"title": "T", "command": ["./task.sh"], "timeout": 3601}`,
+		"long timeout":     `{"title": "T", "command": ["./task.sh"], "timeout": 1e300}`,
 		"output kind":      `{"title": "T", "command": ["./task.sh"], "output": {"kind": "html"}}`,
 		"output path":      `{"title": "T", "command": ["./task.sh"], "output": {"kind": "file", "name": "../x"}}`,
 		"file default":     `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "f", "type": "file", "default": "x"}]}`,
-		"file limit":       `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "f", "type": "file", "maxBytes": 16777217}]}`,
+		"file limit":       `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "f", "type": "file", "maxBytes": -1}]}`,
 		"output name":      `{"title": "T", "command": ["./task.sh"], "output": {"kind": "file", "name": ".."}}`,
 		"input name":       `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a b", "type": "text"}]}`,
 		"duplicate input":  `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "text"}, {"name": "a", "type": "text"}]}`,
@@ -40,29 +42,69 @@ func TestLoadTaskRejectsInvalidFiles(t *testing.T) {
 		"env twice":        `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "text", "env": "A"}, {"name": "b", "type": "text", "env": "A"}]}`,
 		"file stdin":       `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "file", "stdin": true}, {"name": "b", "type": "text", "stdin": true}]}`,
 		"unplaced input":   `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "text", "stdin": true}, {"name": "b", "type": "text"}]}`,
+		"on for text":      `{"title": "T", "command": ["./task.sh", "{a}"], "inputs": [{"name": "a", "type": "text", "on": "x"}]}`,
+		"flag and on":      `{"title": "T", "command": ["./task.sh", "{a}"], "inputs": [{"name": "a", "type": "boolean", "flag": "-a", "on": "-b"}]}`,
+		"several booleans": `{"title": "T", "command": ["./task.sh", "{a}"], "inputs": [{"name": "a", "type": "boolean", "multiple": true}]}`,
+		"join alone":       `{"title": "T", "command": ["./task.sh", "{a}"], "inputs": [{"name": "a", "type": "text", "join": ","}]}`,
+		"two lists":        `{"title": "T", "command": ["./task.sh", "{a}{b}"], "inputs": [{"name": "a", "type": "text", "multiple": true}, {"name": "b", "type": "text", "multiple": true}]}`,
+		"list default":     `{"title": "T", "command": ["./task.sh", "{a}"], "inputs": [{"name": "a", "type": "text", "multiple": true, "default": "x"}]}`,
+		"list item":        `{"title": "T", "command": ["./task.sh", "{a}"], "inputs": [{"name": "a", "type": "number", "multiple": true, "default": [1, "2"]}]}`,
+		"list null":        `{"title": "T", "command": ["./task.sh", "{a}"], "inputs": [{"name": "a", "type": "text", "multiple": true, "default": ["x", null]}]}`,
+		"fixed env name":   `{"title": "T", "command": ["./task.sh"], "env": {"A-B": "x"}}`,
+		"fixed env null":   `{"title": "T", "command": ["./task.sh"], "env": {"A": "x\u0000"}}`,
+		"fixed and input":  `{"title": "T", "command": ["./task.sh"], "env": {"A": "x"}, "inputs": [{"name": "a", "type": "text", "env": "A"}]}`,
+		"sha256":           `{"title": "T", "command": ["./task.sh"], "sha256": "ABC"}`,
 	} {
 		if _, err := loadTask(writeTask(t, "", file)); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
 	dir := t.TempDir()
-	script := filepath.Join(dir, "hello.sh")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\necho hello\n"), 0o600); err != nil {
+	// A script shares directly: no inputs, its output as text. One that is not
+	// executable runs with the program its #! line names, or else the usual one
+	// for its extension; with neither, it is refused.
+	for name, body := range map[string]string{"hello.sh": "echo hello\n", "hello.py": "print('hello')\n", "hello": "#!/bin/sh\necho hello\n"} {
+		if name == "hello.py" {
+			if _, err := exec.LookPath("python3"); err != nil {
+				continue
+			}
+		}
+		script := filepath.Join(dir, name)
+		if err := os.WriteFile(script, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		tk, err := loadTask(script)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if out, err := tk.run(t.Context(), map[string]any{}, nil, func(string) {}); err != nil || string(out) != "hello\n" || tk.Title != name {
+			t.Fatalf("%s: %q %v %+v", name, out, err, tk.definition)
+		}
+	}
+	// A #! line's argument reaches its program as the system would pass it.
+	quotedLine := filepath.Join(dir, "quoted")
+	if err := os.WriteFile(quotedLine, []byte("#!/usr/bin/env -S sh -c 'echo \"[$1]\"' fixed\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := loadTask(script); err == nil {
-		t.Fatal("a script that is not executable was accepted")
-	}
-	if err := os.Chmod(script, 0o700); err != nil {
+	direct, directErr := exec.Command(quotedLine).Output()
+	if err := os.Chmod(quotedLine, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	// A script shares directly: no inputs, its output as text.
-	tk, err := loadTask(script)
+	tk, err := loadTask(quotedLine)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out, err := tk.run(t.Context(), map[string]any{}, nil, func(string) {}); err != nil || string(out) != "hello\n" || tk.Title != "hello.sh" {
-		t.Fatalf("%q %v %+v", out, err, tk.definition)
+	out, err := tk.run(t.Context(), map[string]any{}, nil, func(string) {})
+	if (err == nil) != (directErr == nil) || err == nil && string(out) != string(direct) ||
+		runtime.GOOS == "linux" && string(out) != "["+quotedLine+"]\n" {
+		t.Fatalf("a quoted #! line: %q %v, run directly %q %v", out, err, direct, directErr)
+	}
+	unknown := filepath.Join(dir, "hello.unknown")
+	if err := os.WriteFile(unknown, []byte("echo hello\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadTask(unknown); err == nil || !strings.Contains(err.Error(), "chmod +x") {
+		t.Fatalf("a script that runs with no known program: %v", err)
 	}
 }
 
@@ -80,7 +122,7 @@ func TestCheckValidatesRecipientValues(t *testing.T) {
 	}
 	doc := func(name string, size any) map[string]any { return map[string]any{"name": name, "size": size} }
 	args, problems := tk.check(map[string]any{"text": "abc", "day": "2026-10-13", "n": 1.25, "flag": false, "pick": 2.0, "doc": doc("-q3 report.csv", 10.0)})
-	if len(problems) != 0 || args["text"] != "abc" || args["n"] != "1.25" || args["flag"] != "false" || args["pick"] != "2" {
+	if len(problems) != 0 || fmt.Sprint(args["text"], args["n"], args["flag"], args["pick"]) != "[abc] [1.25] [false] [2]" {
 		t.Fatalf("valid values: %v %v", args, problems)
 	}
 	for name, values := range map[string]map[string]any{
@@ -257,7 +299,7 @@ func TestInputsReachTheScriptAsItTakesThem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out, err := tk.run(t.Context(), map[string]any{"second": "x"}, map[string]string{"second": "x"}, func(string) {}); err != nil || string(out) != "[][out-x]" {
+	if out, err := tk.run(t.Context(), map[string]any{"second": "x"}, map[string][]string{"second": {"x"}}, func(string) {}); err != nil || string(out) != "[][out-x]" {
 		t.Errorf("a later argument with more text: %q %v", out, err)
 	}
 
@@ -282,6 +324,20 @@ func TestInputsReachTheScriptAsItTakesThem(t *testing.T) {
 	if _, err := tk.run(t.Context(), values, args, func(string) {}); err == nil || !strings.Contains(err.Error(), "option") {
 		t.Errorf("an empty value let the next one start an argument: %v", err)
 	}
+	// Nor can an empty value expose the command's own dash, unless it is unsafe.
+	for unsafe, want := range map[string]string{"false": "option", "true": ""} {
+		tk, err := loadTask(writeTask(t, `printf '[%s]' "$@"`, `{"title": "T", "command": ["./task.sh", "{prefix}-{name}"], "inputs": [
+			{"name": "prefix", "type": "text", "unsafe": `+unsafe+`}, {"name": "name", "type": "text"}], "output": {"kind": "text"}}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		values := map[string]any{"prefix": "", "name": "rf"}
+		args, _ := tk.check(values)
+		if out, err := tk.run(t.Context(), values, args, func(string) {}); want == "" && (err != nil || string(out) != "[-rf]") ||
+			want != "" && (err == nil || !strings.Contains(err.Error(), want)) {
+			t.Errorf("an empty prefix, unsafe %s: %q %v", unsafe, out, err)
+		}
+	}
 
 	// A file marked for stdin gives the script its contents.
 	path := writeTask(t, "cat", `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "doc", "type": "file", "stdin": true}], "output": {"kind": "text"}}`)
@@ -292,7 +348,109 @@ func TestInputsReachTheScriptAsItTakesThem(t *testing.T) {
 	if err := os.WriteFile(doc, []byte("contents\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := tk.run(t.Context(), map[string]any{"doc": doc}, map[string]string{"doc": doc}, func(string) {}); err != nil || string(out) != "contents\n" {
+	if out, err := tk.run(t.Context(), map[string]any{"doc": doc}, map[string][]string{"doc": {doc}}, func(string) {}); err != nil || string(out) != "contents\n" {
 		t.Fatalf("a file on stdin: %q %v", out, err)
+	}
+}
+
+// Several values pass apart or joined, a boolean passes the text it says for
+// each state, fixed variables reach every run, and an input marked unsafe may
+// set any variable and start with -.
+func TestScriptsGetValuesTheirOwnWay(t *testing.T) {
+	path := writeTask(t, `for a; do printf '[%s]' "$a"; done; echo; echo "TAGS=${TAGS-unset} DEBUG=${DEBUG-unset} MODE=$MODE"; cat`, `{"title": "T",
+		"command": ["./task.sh", "{color}", "{verify}", "{tag}", "{only}", "{names}", "out-{day}.csv", "{files}"],
+		"env": {"MODE": "prod", "LANG": "C"},
+		"inputs": [
+			{"name": "color", "type": "boolean", "flag": "--color", "off": "--no-color"},
+			{"name": "verify", "type": "boolean", "on": "", "off": "--no-verify"},
+			{"name": "debug", "type": "boolean", "env": "DEBUG", "on": "1", "off": ""},
+			{"name": "tag", "type": "text", "multiple": true, "flag": "--tag"},
+			{"name": "only", "type": "choice", "options": ["a", "b", "c"], "multiple": true, "flag": "--only=", "join": ","},
+			{"name": "names", "type": "text", "multiple": true},
+			{"name": "day", "type": "date", "multiple": true},
+			{"name": "files", "type": "file", "multiple": true},
+			{"name": "tags", "type": "text", "multiple": true, "env": "TAGS"},
+			{"name": "lines", "type": "text", "multiple": true, "stdin": true}
+		], "output": {"kind": "text"}}`)
+	tk, err := loadTask(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		values map[string]any
+		want   string
+	}{
+		{map[string]any{"color": true, "verify": true, "debug": true, "tag": []any{"x", "y"}, "only": []any{"a", "c"}, "names": []any{"Ada", "Bo"},
+			"day": []any{"2026-10-20", "2026-10-21"}, "tags": []any{"t1", "t2"}, "lines": []any{"one", "two"}},
+			"[--color][--tag][x][--tag][y][--only=a,c][Ada][Bo][out-2026-10-20.csv][out-2026-10-21.csv]\nTAGS=t1\nt2 DEBUG=1 MODE=prod\none\ntwo\n"},
+		{map[string]any{"color": false, "verify": false, "debug": false, "tags": []any{}},
+			"[--no-color][--no-verify]\nTAGS=unset DEBUG=unset MODE=prod\n"},
+	} {
+		args, problems := tk.check(tc.values)
+		if out, err := tk.run(t.Context(), tc.values, args, func(string) {}); len(problems) != 0 || err != nil || string(out) != tc.want {
+			t.Errorf("%v: %q %v %v", tc.values, out, err, problems)
+		}
+	}
+	for name, values := range map[string]map[string]any{
+		"not a list":    {"tag": "x"},
+		"a bad value":   {"day": []any{"2026-10-21", "yesterday"}},
+		"not an option": {"only": []any{"d"}},
+		"option-like":   {"names": []any{"Ada", "-rf"}},
+	} {
+		if _, problems := tk.check(values); len(problems) != 1 {
+			t.Errorf("%s: %v", name, problems)
+		}
+	}
+	// Joined, the values are one text, which may not start with -.
+	if _, problems := tk.check(map[string]any{"only": []any{"a"}, "tag": []any{"x"}}); len(problems) != 0 {
+		t.Errorf("%v", problems)
+	}
+	joined, err := loadTask(writeTask(t, "", `{"title": "T", "command": ["./task.sh", "{a}"], "inputs": [{"name": "a", "type": "text", "multiple": true, "join": "-"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, problems := joined.check(map[string]any{"a": []any{"", "rf"}}); problems["a"] != dashProblem {
+		t.Errorf("a joined list starting with -: %v", problems)
+	}
+	if _, problems := joined.check(map[string]any{"a": []any{"x", "", "y"}}); len(problems) != 0 {
+		t.Errorf("a joined list holding -: %v", problems)
+	}
+
+	// Several files on stdin arrive one after another.
+	path = writeTask(t, `cat; echo "$DOCS"`, `{"title": "T", "command": ["./task.sh"], "env": {"DOCS": ""}, "inputs": [
+		{"name": "docs", "type": "file", "multiple": true, "stdin": true, "join": ","}], "output": {"kind": "text"}}`)
+	if tk, err = loadTask(path); err != nil {
+		t.Fatal(err)
+	}
+	var docs []string
+	for i, text := range []string{"first\n", "second\n"} {
+		doc := filepath.Join(filepath.Dir(path), fmt.Sprint(i))
+		if err := os.WriteFile(doc, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		docs = append(docs, doc)
+	}
+	if out, err := tk.run(t.Context(), map[string]any{}, map[string][]string{"docs": docs}, func(string) {}); err != nil || string(out) != "first\nsecond\n\n" {
+		t.Fatalf("files on stdin, joined elsewhere: %q %v", out, err)
+	}
+
+	// Unsafe, an input may set a variable that changes what programs run, and
+	// its text may start with -; a required list needs a value.
+	if _, err := loadTask(writeTask(t, "", `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "p", "type": "text", "env": "PATH"}]}`)); err == nil {
+		t.Fatal("PATH without unsafe")
+	}
+	tk, err = loadTask(writeTask(t, `for a; do printf '[%s]' "$a"; done; echo "$BASH_ENV"`, `{"title": "T", "command": ["./task.sh", "{opt}"],
+		"inputs": [{"name": "opt", "type": "text", "unsafe": true}, {"name": "env", "type": "text", "env": "BASH_ENV", "unsafe": true},
+			{"name": "need", "type": "text", "multiple": true, "required": true, "stdin": true}], "output": {"kind": "text"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, problems := tk.check(map[string]any{"opt": "-x", "need": []any{}}); len(problems) != 1 || problems["need"] == "" {
+		t.Errorf("an empty required list: %v", problems)
+	}
+	values := map[string]any{"opt": "-x", "env": "/tmp/rc", "need": []any{"n"}}
+	args, problems := tk.check(values)
+	if out, err := tk.run(t.Context(), values, args, func(string) {}); len(problems) != 0 || err != nil || string(out) != "[-x]/tmp/rc\n" {
+		t.Errorf("unsafe values: %q %v %v", out, err, problems)
 	}
 }

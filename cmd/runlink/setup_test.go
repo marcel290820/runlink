@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -169,7 +172,7 @@ func TestGuidedFirstShare(t *testing.T) {
 	stack := startStack(t)
 	stubClipboard(t)
 	script := writeScript(t, "greet.sh", `echo "choosing words for $1" >&2; echo "Hi $1, $2"`)
-	stored := filepath.Join(filepath.Dir(script), "greet.runlink.json")
+	stored := filepath.Join(filepath.Dir(script), "greet.sh.runlink.json")
 	env := terminalEnv(stack.Frontend)
 
 	c := newConsole(t)
@@ -177,10 +180,11 @@ func TestGuidedFirstShare(t *testing.T) {
 	c.await(t, "greet.sh has no task file yet")
 	// A title replacing the suggestion, no description, an owner, then a text
 	// input and a choice whose options are first left out.
-	c.press(t, "Greet someone\r\rDana\r"+"y"+"Your name\rname\r\r\r\r"+"y"+"Tone\r\rc\r\r")
+	c.press(t, "Greet someone\r\rDana\r"+"y"+"Your name\rname\r\r\r\r\r"+"y"+"Tone\r\rc\r\r")
 	c.await(t, "Options are needed for a choice.")
-	// Optional; no more inputs; text output with a label; the default timeout; progress.
-	c.press(t, "warm, formal\r"+"n"+"\r"+"\r"+"\ra greeting\r"+"\r"+"y")
+	// One value, optional, the second argument; no more inputs or variables;
+	// text output with a label; the default timeout; progress.
+	c.press(t, "warm, formal\r"+"\r"+"n"+"\r"+"\r"+"\r"+"\r"+"\ra greeting\r"+"\r"+"y")
 	c.await(t, "Share now?")
 	for _, shown := range []string{
 		"Inputs        name         text, required, argument · Your name",
@@ -254,17 +258,17 @@ func TestSetupAsksHowEachInputIsPassed(t *testing.T) {
 	c := newConsole(t)
 	done := c.share(t.Context(), env, script)
 	c.await(t, "tool.sh has no task file yet")
-	c.press(t, "\r\r\r"+"y"+"Name\r\r\r\r\r") // a required argument
+	c.press(t, "\r\r\r"+"y"+"Name\r\r\r\r\r\r") // a required argument
 	c.await(t, "name         text, required, argument · Name")
-	c.press(t, "y"+"Verbose\r\rb\r\r\r") // a boolean, passed as --verbose when on
+	c.press(t, "y"+"Verbose\r\rb\r\r\r\r") // a boolean, passed as --verbose when on
 	c.await(t, "verbose      boolean, --verbose · Verbose")
-	c.press(t, "y"+"Dest\r\r\rno\r\r") // an optional option
+	c.press(t, "y"+"Dest\r\r\r\rno\r\r") // an optional option
 	c.await(t, "dest         text, --dest · Dest")
-	c.press(t, "y"+"Token\r\r\rnv\r\r") // an optional variable
+	c.press(t, "y"+"Token\r\r\r\rnv\r\r") // an optional variable
 	c.await(t, "token        text, $TOKEN · Token")
-	c.press(t, "y"+"Note\r\r\rns\r") // a line of stdin
+	c.press(t, "y"+"Note\r\r\r\rns\r") // a line of stdin
 	c.await(t, "note         text, stdin · Note")
-	c.press(t, "\r"+"\r\r\r\r")
+	c.press(t, "\r"+"\r"+"\r\r\r\r")
 	runs := "Runs  [TOKEN={token}] ./tool.sh [--verbose] [--dest {dest}] {name}"
 	c.await(t, runs)
 	c.await(t, "Stdin {note}")
@@ -302,9 +306,9 @@ func TestSetupAsksHowEachInputIsPassed(t *testing.T) {
 	c = newConsole(t)
 	done = c.share(t.Context(), env, "--edit", script)
 	c.await(t, "Editing")
-	// Each input: keep, label, name, type, required unless a switch, passed as,
-	// and its option, flag or variable.
-	c.press(t, "\r\r\r"+strings.Repeat("\r", 6)+strings.Repeat("\r", 6)+strings.Repeat("\r", 7)+strings.Repeat("\r", 7)+strings.Repeat("\r", 6)+"\r"+"\r\r\r\r")
+	// Each input: keep, label, name, type, several and required unless a
+	// switch, passed as, and its option, variable, or a switch's two texts.
+	c.press(t, "\r\r\r"+strings.Repeat("\r", 7)+strings.Repeat("\r", 7)+strings.Repeat("\r", 8)+strings.Repeat("\r", 8)+strings.Repeat("\r", 7)+"\r"+"\r"+"\r\r\r\r")
 	c.await(t, "Share now?")
 	c.await(t, runs)
 	c.await(t, "Stdin {token} {note}, a line each")
@@ -352,8 +356,9 @@ func TestGuidedSetupCancelEditAndErrors(t *testing.T) {
 	c.await(t, "Editing "+stored)
 	c.await(t, "Title         Echo")
 	// A new title; the first input renamed, the second, without a label and with
-	// options no list of text could hold, kept as it is; a five-second timeout.
-	c.press(t, "Echo it\r\r\r"+"\r"+"\rwords\r\r\r\r"+"\r"+"\r\r\r\r\r\r"+"\r"+"\r\r"+"5\r"+"\r")
+	// options no list of text could hold, kept as it is, each where it was; a
+	// five-second timeout.
+	c.press(t, "Echo it\r\r\r"+"\r"+"\rwords\r"+"\r\r\r\r\r"+"\r"+strings.Repeat("\r", 8)+"\r"+"\r"+"\r\r"+"5\r"+"\r")
 	c.await(t, "Runs  ./echo.sh {words} {pick}")
 	c.press(t, "\r")
 	c.await(t, "Sharing")
@@ -375,7 +380,6 @@ func TestGuidedSetupCancelEditAndErrors(t *testing.T) {
 		"title is required":             `{"title": "", "command": ["./echo.sh"]}`,
 		"line 3: invalid character":     "{\n  \"title\": \"T\",\n  ,\n}",
 		`unknown field "shell"`:         `{"title": "T", "command": ["./echo.sh"], "shell": true}`,
-		"is for another script":         `{"title": "T", "command": ["/bin/echo"]}`,
 		"a task file is at most 64 KiB": `{"title": "` + strings.Repeat("x", maxTaskFile) + `", "command": ["./echo.sh"]}`,
 	} {
 		if err := os.WriteFile(stored, []byte(file), 0o600); err != nil {
@@ -512,7 +516,7 @@ func TestSetupInANarrowTerminal(t *testing.T) {
 	}
 	done := c.share(t.Context(), terminalEnv(stack.Frontend), script)
 	c.await(t, "no task file yet")
-	c.press(t, strings.Repeat("\r", 9)) // every suggestion, then share
+	c.press(t, strings.Repeat("\r", 10)) // every suggestion, then share
 	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(20 * time.Millisecond) {
 		if _, err := os.Stat(storedPath(script)); err == nil {
 			break
@@ -522,6 +526,35 @@ func TestSetupInANarrowTerminal(t *testing.T) {
 	}
 	c.press(t, "\x03")
 	exited(t, done, 0)
+}
+
+// Commands and variables typed in the setup split as a POSIX shell splits
+// them, and a command it shows reads back as the same arguments.
+func TestWordsSplitAsAShell(t *testing.T) {
+	for line, want := range map[string][]string{
+		`./tool.sh "\d+" '\d' a\ b`:   {"./tool.sh", `\d+`, `\d`, "a b"},
+		`"a\"b" "x\\y" "\$HOME" '' x`: {`a"b`, `x\y`, "$HOME", "", "x"},
+	} {
+		if got, ok := words(line); !ok || !slices.Equal(got, want) {
+			t.Errorf("%s: %q %v", line, got, ok)
+		}
+	}
+	for _, line := range []string{`"open`, `'open`, `end\`} {
+		if _, ok := words(line); ok {
+			t.Errorf("%s: accepted", line)
+		}
+	}
+	argv := []string{"./a b.sh", `\d+`, "it's", `"q"`, "{name}", "", "two\nlines"}
+	if got, ok := words(quoted(argv)); !ok || !slices.Equal(got, argv) {
+		t.Errorf("round trip: %q", got)
+	}
+	if env, problem := parseEnv(`RE="\d+" A='b c'`, nil); problem != "" || env["RE"] != `\d+` || env["A"] != "b c" {
+		t.Errorf("variables: %q %s", env, problem)
+	}
+	fixed := map[string]string{"NOTE": "two\nlines", "Q": "it's"}
+	if env, problem := parseEnv(envLine(fixed), nil); problem != "" || !maps.Equal(env, fixed) {
+		t.Errorf("variables round trip: %q %s", env, problem)
+	}
 }
 
 func TestCommandLineQuotesForTheShell(t *testing.T) {
@@ -600,4 +633,248 @@ func rendered(s string) []string {
 		}
 	}
 	return lines
+}
+
+// The setup adapts to the script: each positional argument goes where the
+// owner says, a flag can have another for off, a field can take several files,
+// variables can be fixed for every run, one that changes what the script runs
+// can be passed when the owner allows it, and the command line itself can be
+// edited. --edit keeps it all.
+func TestSetupAdaptsToTheScript(t *testing.T) {
+	stack := startStack(t)
+	stubClipboard(t)
+	script := writeScript(t, "tool.sh", `for a; do case $a in /*) cat "$a" ;; *) printf '[%s]' "$a" ;; esac; done
+echo; echo "MODE=$MODE GREETING=$GREETING PATH=$PATH"`)
+	env := terminalEnv(stack.Frontend)
+
+	c := newConsole(t)
+	done := c.share(t.Context(), env, script)
+	c.await(t, "tool.sh has no task file yet")
+	c.press(t, "\r\r\r"+"y"+"Alpha\r\r\r\r\r\r")
+	c.await(t, "alpha        text, required, argument · Alpha")
+	c.press(t, "y"+"Beta\r\r\r\r\r\r")
+	c.await(t, "1st         before {alpha}")
+	c.press(t, "1\r") // before alpha
+	c.press(t, "y"+"Files\r\rf\ryn\r")
+	c.await(t, "their paths as positional arguments")
+	c.await(t, "3rd         after {alpha}")
+	c.press(t, "\r")
+	c.await(t, "each value its own argument")
+	c.press(t, "\r")
+	c.await(t, "files        file, several, argument · Files")
+	c.press(t, "y"+"Color\r\rb\r\r\r--no-color\r")
+	c.await(t, "color        boolean, --color|--no-color · Color")
+	c.press(t, "y"+"Path\r\r\r\rnv\r\r")
+	c.await(t, "PATH lets recipients run other code. Allow?")
+	c.press(t, "y")
+	c.await(t, "path         text, $PATH, unsafe · Path")
+	c.press(t, "\r"+"MODE=prod 'GREETING=hi there'\r"+"\r\r\r\r")
+	c.await(t, "Runs  'GREETING=hi there' MODE=prod [PATH={path}] ./tool.sh --color|--no-color {beta} {alpha} [{files}]...")
+	c.await(t, "Unsafe by your choice: path sets PATH")
+	// A command that cannot run is caught before anything is saved.
+	c.press(t, "c")
+	c.await(t, "Command       ./tool.sh {color} {beta} {alpha} {files}")
+	c.press(t, "./missing.sh {color} {beta} {alpha} {files}\r")
+	c.await(t, "This would not load: cannot run ./missing.sh")
+	c.press(t, "c\x15./tool.sh run {color} {beta} {alpha} {files}\r")
+	c.await(t, "Runs  'GREETING=hi there' MODE=prod [PATH={path}] ./tool.sh run --color|--no-color {beta} {alpha} [{files}]...")
+	c.press(t, "\r")
+	c.await(t, "Saved "+storedPath(script))
+	c.await(t, "Sharing")
+	if strings.Count(c.screen(), "Unsafe by your choice: path sets PATH") != 4 { // each summary, then sharing
+		t.Fatalf("the unsafe input was not shown while sharing:\n%s", c.screen())
+	}
+	stored, err := os.ReadFile(storedPath(script))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"command": ["./tool.sh", "run", "{color}", "{beta}", "{alpha}", "{files}"],` + "\n" + `  "env": { "GREETING": "hi there", "MODE": "prod" },`,
+		`{ "name": "files", "type": "file", "label": "Files", "multiple": true },`,
+		`{ "name": "color", "type": "boolean", "label": "Color", "flag": "--color", "off": "--no-color" },`,
+		`{ "name": "path", "type": "text", "label": "Path", "env": "PATH", "unsafe": true }`,
+	} {
+		if !strings.Contains(string(stored), want) {
+			t.Fatalf("stored file lacks %s:\n%s", want, stored)
+		}
+	}
+	b, got := recipient(t, c.screen())
+	if strings.Contains(got, "unsafe") || strings.Contains(got, "PATH") || strings.Contains(got, "no-color") || !strings.Contains(got, `"multiple":true`) {
+		t.Fatalf("recipients got %s", got)
+	}
+	files := []any{map[string]any{"name": "a.txt", "size": 2.0}, map[string]any{"name": "a.txt", "size": 2.0}}
+	if _, output, failure := b.run(t, map[string]any{"alpha": "A", "beta": "B", "files": files, "color": false, "path": "/usr/bin:/bin"},
+		[]byte("fa"), []byte("fb")); failure != nil || output != "[run][--no-color][B][A]fafb\nMODE=prod GREETING=hi there PATH=/usr/bin:/bin\n" {
+		t.Fatalf("output %q, failure %+v", output, failure)
+	}
+	c.press(t, "\x03")
+	exited(t, done, 0)
+
+	c = newConsole(t)
+	done = c.share(t.Context(), env, "--edit", script)
+	c.await(t, "Editing")
+	// Title, description, owner; alpha, beta, files, color, path; no more
+	// inputs; the variables; output, label, timeout, progress; share.
+	c.press(t, strings.Repeat("\r", 3+8+8+9+7+8+1+1+4+1))
+	c.await(t, "Sharing")
+	if again, err := os.ReadFile(storedPath(script)); err != nil || string(again) != string(stored) {
+		t.Fatalf("--edit changed the file to:\n%s %v", again, err)
+	}
+	c.press(t, "\x03")
+	exited(t, done, 0)
+}
+
+// A script's task file is named after all of its name, so greet.sh and greet.py
+// each have their own. A script without one is offered another's only by
+// asking: one set up for a script with the same contents, or for one now gone.
+func TestStoredFilesFollowTheWholeScriptName(t *testing.T) {
+	stack := startStack(t)
+	stubClipboard(t)
+	env := terminalEnv(stack.Frontend)
+	greet := writeScript(t, "greet.sh", `echo "Hi $1"`)
+	dir := filepath.Dir(greet)
+	data, err := os.ReadFile(greet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := `{"title": "Greet", "command": ["./greet.sh", "{name}"], "inputs": [{"name": "name", "type": "text", "required": true}],
+		"output": {"kind": "text"}, "sha256": "` + fmt.Sprintf("%x", sha256.Sum256(data)) + `"}`
+	if err := os.WriteFile(storedPath(greet), []byte(file), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	script := func(name, body string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(body), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	// Another script of the same name gets questions of its own.
+	c := newConsole(t)
+	done := c.share(t.Context(), env, script("greet.py", "#!/bin/sh\necho py\n"))
+	c.await(t, "greet.py has no task file yet")
+	c.press(t, "\x03")
+	exited(t, done, 130)
+	if strings.Contains(c.screen(), "Start from") {
+		t.Fatalf("offered greet.sh's answers:\n%s", c.screen())
+	}
+
+	// A copy is offered the original's answers, which the owner takes as they are.
+	hello := script("hello.sh", string(data))
+	c = newConsole(t)
+	done = c.share(t.Context(), env, hello)
+	c.await(t, "greet.sh    its answers; it has the same contents as hello.sh")
+	c.press(t, "\r")
+	c.await(t, "Starting from "+storedPath(greet)+"; the answers go to "+storedPath(hello))
+	c.press(t, strings.Repeat("\r", 3+7+1+1+4))
+	c.await(t, "Runs  ./hello.sh {name}")
+	c.press(t, "\r")
+	c.await(t, "Sharing")
+	b, _ := recipient(t, c.screen())
+	if _, output, failure := b.run(t, map[string]any{"name": "Ada"}); failure != nil || output != "Hi Ada\n" {
+		t.Fatalf("output %q, failure %+v", output, failure)
+	}
+	c.press(t, "\x03")
+	exited(t, done, 0)
+	if kept, err := os.ReadFile(storedPath(greet)); err != nil || string(kept) != file {
+		t.Fatalf("the original's file changed: %s %v", kept, err)
+	}
+
+	// After a rename, the old name's file is offered; the owner can start afresh.
+	if err := os.Remove(greet); err != nil {
+		t.Fatal(err)
+	}
+	c = newConsole(t)
+	done = c.share(t.Context(), env, script("renamed.sh", "#!/bin/sh\necho \"Hello $1\"\n"))
+	c.await(t, "greet.sh    its answers; greet.sh is gone, perhaps renamed")
+	c.press(t, "n\r")
+	c.await(t, "renamed.sh has no task file yet")
+	c.press(t, "\x03")
+	exited(t, done, 130)
+}
+
+// A command taken from another script's file runs the new script in its
+// place, keeping the program that runs it, and adding one when the new script
+// is not executable.
+func TestRetargetKeepsTheProgram(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "plain.sh"), []byte("#!/bin/sh\necho hi\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		command             []string
+		other, script, want string
+		found               bool
+	}{
+		{[]string{"./greet.sh", "{name}"}, "greet.sh", "hello.sh", "./hello.sh {name}", true},
+		{[]string{"python3", "./tool.py", "{x}"}, "tool", "hello.py", "python3 ./hello.py {x}", true}, // an older file, named without the extension
+		{[]string{"python3", "tool.py"}, "tool.py", "hello.py", "python3 ./hello.py", true},           // a bare operand
+		{[]string{"/usr/bin/env", "python3", "./old.py", "--in={x}"}, "gone", "hello.py", "/usr/bin/env python3 ./hello.py --in={x}", true},
+		{[]string{"./greet.sh", "{name}"}, "greet.sh", "plain.sh", "/bin/sh ./plain.sh {name}", true}, // not executable
+		{[]string{"python3", "-c", "print(1)"}, "gone", "hello.py", "python3 -c 'print(1)'", false},
+	} {
+		got, found := retarget(c.command, dir, c.other, c.script)
+		if commandLine(got) != c.want || found != c.found {
+			t.Errorf("%q from %s: %s %v, want %s %v", c.command, c.other, commandLine(got), found, c.want, c.found)
+		}
+	}
+}
+
+// Only a task file that loads is offered to a script without one.
+func TestMatchesOfferOnlyFilesThatLoad(t *testing.T) {
+	dir := t.TempDir()
+	for name, file := range map[string]string{
+		"old.sh.runlink.json":    `{"title": "Old"}`,
+		"broken.sh.runlink.json": `{"title": "B", "command": ["./broken.sh"], "inputs": [{"name": "a", "type": "html"}]}`,
+		"gone.sh.runlink.json":   `{"title": "Gone", "command": ["./gone.sh"]}`,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(file), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if found := matches(filepath.Join(dir, "new.sh"), strings.Repeat("0", 64)); len(found) != 1 || found[0].script != "gone.sh" {
+		t.Fatalf("offered %+v", found)
+	}
+}
+
+// Enter through --edit keeps a separator exactly, whitespace and all.
+func TestEditKeepsSeparators(t *testing.T) {
+	stack := startStack(t)
+	stubClipboard(t)
+	script := writeScript(t, "join.sh", `printf '[%s]' "$@"; echo "$A"`)
+	data, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft := &task{definition: definition{Title: "J", Output: &output{Kind: "text"}, Inputs: []input{
+		{Name: "a", Type: "text", Multiple: true, binding: binding{Env: "A", Join: "\n\t"}},
+		{Name: "b", Type: "text", Multiple: true, binding: binding{Join: " | "}},
+	}}, Command: []string{"./join.sh", "{b}"}, Timeout: 60, SHA256: fmt.Sprintf("%x", sha256.Sum256(data)), dir: filepath.Dir(script)}
+	stored, err := encodeTask(draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(storedPath(script), stored, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := newConsole(t)
+	done := c.share(t.Context(), terminalEnv(stack.Frontend), "--edit", script)
+	c.await(t, "Editing")
+	// Title, description, owner; a: keep, label, name, type, several,
+	// required, passed as, variable, values, between; b: the same with no
+	// variable; no more inputs; variables; output, label, timeout, progress.
+	c.press(t, strings.Repeat("\r", 3+10+9+1+1+4))
+	c.await(t, "Share now?")
+	c.press(t, "\r")
+	c.await(t, "Sharing")
+	if again, err := os.ReadFile(storedPath(script)); err != nil || string(again) != string(stored) {
+		t.Fatalf("--edit changed the file to:\n%s %v", again, err)
+	}
+	b, _ := recipient(t, c.screen())
+	if _, output, failure := b.run(t, map[string]any{"a": []any{"x", "y"}, "b": []any{"p", "q"}}); failure != nil || output != "[p | q]x\n\ty\n" {
+		t.Fatalf("output %q, failure %+v", output, failure)
+	}
+	c.press(t, "\x03")
+	exited(t, done, 0)
 }

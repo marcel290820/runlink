@@ -36,7 +36,7 @@ build/runlink share examples/greet.json
 ```
 
 Open the printed link, fill in the form, and run it: the script runs on your
-machine, and the result appears in the browser. `examples/sort.json` takes a file
+machine, and the result appears in the browser. `examples/sort.json` takes files
 and returns one.
 Sharing a script directly, as in `build/runlink share ./backup.sh`, asks a few
 questions the first time and saves the form beside it.

@@ -238,7 +238,7 @@ try {
     await page.context().close();
   }
 
-  // A file in and a file out, over the relay path: the recipient's file reaches the
+  // Files in and a file out, over the relay path: the recipient's two files reach the
   // owner's script, and the sorted list downloads.
   const sorter = share(stack.frontend, 'examples/sort.json');
   owners.push(sorter.owner);
@@ -247,13 +247,14 @@ try {
   const sorting = await recipient(sortLink, true);
   await sorting.page.waitForSelector('.title', { timeout: 20_000 });
   const numbers = Array.from({ length: 100_000 }, (_, i) => String(99_999 - i).padStart(5, '0'));
-  await sorting.page.locator('input[type=file]').setInputFiles({ name: 'numbers.txt', mimeType: 'text/plain', buffer: Buffer.from(`${numbers.join('\n')}\n`) });
+  await sorting.page.locator('input[type=file]').setInputFiles([0, 1].map(half => ({ name: `numbers-${half}.txt`, mimeType: 'text/plain',
+    buffer: Buffer.from(`${numbers.filter((_, i) => i % 2 === half).join('\n')}\n`) })));
   await sorting.page.locator('.run').click();
   await sorting.page.waitForFunction(() => document.querySelector('.bench').dataset.stage === 'done', null, { timeout: 30_000 });
   const [download] = await Promise.all([sorting.page.waitForEvent('download'), sorting.page.locator('a.download').click()]);
   assert.equal(download.suggestedFilename(), 'sorted.txt');
   assert.equal(await readFile(await download.path(), 'utf8'), `${numbers.toReversed().join('\n')}\n`);
-  assert.deepEqual(await sorting.page.locator('.log li').allTextContents(), ['Sorting 100000 lines']);
+  assert.deepEqual(await sorting.page.locator('.log li').allTextContents(), ['Sorting 100000 lines from 2 files']);
   assert.equal((await path(sorting.page))[0], 'relay');
   assert.deepEqual(sorting.errors, []);
   await sorting.page.context().close();
@@ -332,7 +333,7 @@ try {
   await idle.page.waitForFunction(() => document.querySelector('.bench').dataset.fault === 'disconnected', null, { timeout: 20_000 });
   await silent.page.waitForFunction(() => document.getElementById('gate').dataset.reason === 'unreachable', null, { timeout: 45_000 });
   console.log('Chromium: WebRTC data over TURN UDP and TCP relays of the local stack; forged and expired credentials rejected; ' +
-    'a shared task completed from its link over direct and relay-only paths and with a separate secret; a file sorted and downloaded over a relay; ' +
+    'a shared task completed from its link over direct and relay-only paths and with a separate secret; two files sorted together and downloaded over a relay; ' +
     'a wrong secret refused; a stopped share reported inactive; oversized input refused; a vanished owner reported mid-run; ' +
     'a silent owner dropped at the setup deadline and a flooding one cut off past 1 MB');
 } finally {

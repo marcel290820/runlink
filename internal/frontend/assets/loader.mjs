@@ -1,4 +1,4 @@
-const approvedGUI = Object.freeze(["6cda58d2fb7590537e757bce736c987f1d02ae10423a2a50b0d321d3f8f16253"]);
+const approvedGUI = Object.freeze(["e1a38e5c24943fd099a343fef612b770fbecf1bd41e4dc63b3df1942ac8f2ee2"]);
 
 // The gate shows where the link stands until the verified GUI replaces it.
 const gate = document.getElementById('gate');
@@ -297,13 +297,14 @@ async function authenticate({ peer, next, send }) {
 }
 
 // task.run for the GUI: send the values, files as their name and size, pass on
-// stages and progress, send the files once the run is accepted, collect the
-// output's bytes, and settle with the outcome.
+// stages and progress, send the files once the run is accepted, in input and
+// list order, collect the output's bytes, and settle with the outcome.
 function runner({ next, send, upload, end }, definition) {
   return async (values, progress) => {
-    const files = (definition.inputs ?? []).map(spec => values[spec.name]).filter(value => value instanceof File);
+    const files = (definition.inputs ?? []).flatMap(spec => [values[spec.name]].flat()).filter(value => value instanceof File);
+    const announce = value => value instanceof File ? { name: value.name, size: value.size } : value;
     send({ values: Object.fromEntries(Object.entries(values).map(([name, value]) =>
-      [name, value instanceof File ? { name: value.name, size: value.size } : value])) });
+      [name, Array.isArray(value) ? value.map(announce) : announce(value)])) });
     const chunks = [];
     let received = 0, updates = 0;
     for (;;) {

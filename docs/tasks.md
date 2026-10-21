@@ -8,7 +8,7 @@ Sharing lasts while the command runs; Ctrl-C stops it, including a run in progre
 scripts/dev.sh                                  # terminal 1: the local stack
 build/runlink share examples/greet.json         # terminal 2: prints the link
 build/runlink share --separate-secret examples/greet.json
-build/runlink share examples/sort.json          # a file in, a file out
+build/runlink share examples/sort.json          # files in, a file out
 build/runlink share ./backup.sh                 # a script: set up its form once
 build/runlink share --edit ./backup.sh          # change the script's answers
 ```
@@ -35,32 +35,58 @@ every stderr line.
 
 ### Sharing a script
 
-The first time you share a script from a terminal, `share` asks what recipients
-see and saves the answers beside the script as `<name>.runlink.json`: `backup.sh`
-gets `backup.runlink.json`, leaving `backup.json` free. Every question has a
-suggestion, so pressing Enter through them shares a task without inputs that
-shows stdout as text. The questions follow the task file below: title,
-description, owner, then inputs one at a time (label, name, type, options for a
-choice, whether it is required, and how the script takes it, as
-[Input](#input) lists), the output's kind and label, the timeout, and progress.
-Lists take the arrow keys or an option's first letter; a wrong answer is
-explained under the question until you fix it. Before anything is saved, `share`
-shows the form as recipients will see it and how the script will get the values:
-the command, with options before positional arguments and in brackets what a run
-can leave out, and what goes to stdin. Enter saves and shares, `e` goes through
-the answers again, and Ctrl-C at any point stops without writing anything.
+Runlink takes a script as it is: whatever order, style, or mix of arguments,
+options, flags, variables, and stdin it reads, the setup records how. The first
+time you share a script from a terminal, `share` asks what recipients see and
+how the script takes each value, and saves the answers beside the script as
+`<script>.runlink.json`, named after all of the script's name: `backup.sh` gets
+`backup.sh.runlink.json`, and `backup.py` its own `backup.py.runlink.json`.
+Every question has a suggestion, so pressing Enter through them shares a task
+without inputs that shows stdout as text. The questions follow the task file
+below: title, description, owner, then inputs one at a time (label, name, type,
+options for a choice, whether it takes several values, whether it is required,
+and how the script takes it, as [Input](#input) lists: where a positional
+argument goes among the others, an option's spelling, what a boolean passes when
+on and when off, how several values are joined), then variables fixed for every
+run, the output's kind and label, the timeout, and progress. Lists take the
+arrow keys or an option's first letter; a wrong answer is explained under the
+question until you fix it. Before anything is saved, `share` shows the form as
+recipients will see it and how the script will get the values: the command,
+with in brackets what a run can leave out and `...` after what repeats per
+value, and what goes to stdin. Enter saves and shares, `e` goes through the
+answers again, `c` edits the command line itself, for anything the questions
+do not cover, such as fixed arguments or a program to run the script with, and
+Ctrl-C at any point stops without writing anything. A form or command that
+would not load or run says why under the summary, and Enter saves nothing
+until it is fixed.
 
-Later shares load the saved file without asking. `--edit` asks again with the
-saved answers as suggestions and keeps the fields it does not ask about, such as
-`help`, `placeholder` and bounds; editing the file by hand works as well. A
-command written by hand stays as written; one the setup made follows the inputs.
-A saved file that does not load, or whose command does not run the script, stops
-`share` with the file's path and the problem, and `share` never asks over it.
-The file is written whole or not at all, readable only by you when new, and
-only `--edit` replaces one, keeping its permissions. Without
-a terminal, a script without a saved file shares without input, and nothing is
+A script without the executable bit runs with the program its `#!` line names,
+or else the usual one for its extension, such as `python3` for `.py`, `node` for
+`.js` and `sh` for `.sh`; the summary shows it, and `c` changes it.
+
+Later shares load the saved file without asking, even after the script changes.
+`--edit` asks again with the saved answers as suggestions and keeps the fields
+it does not ask about, such as `help`, `placeholder` and bounds; editing the file
+by hand works as well. The setup keeps the command's other arguments as they
+are and moves only the placeholders its answers change. A saved file that does
+not load stops `share` with the file's path and the problem, and `share` never
+asks over it. The file is written whole or not at all, readable only by you when
+new, and only `--edit` replaces one, keeping its permissions. Without a
+terminal, a script without a saved file shares without input, and nothing is
 asked or written. Name a task file directly, as in `runlink share backup.json`,
 and it is shared as it is, without questions.
+
+A script without a file of its own may still have one under another name. The
+setup records the script's SHA-256 in `sha256`, so `share` finds, beside the
+script, a file saved for a script with the same contents, as for a copy, or for
+a script that is gone, as after a rename. It never uses one without asking:
+"Start from" lists them with `new` for answers of its own, since a copy may want
+a different form. Picking one goes through the questions with its answers as
+suggestions, runs the new script in the other's place in its command, with
+its interpreter when it is not executable, and saves a file of the script's
+own; the other file stays as it was. A command that names no script there is
+shown for you to check, and `c` changes it. A script moved to another folder without its file
+starts afresh.
 
 ## Task file
 
@@ -72,10 +98,11 @@ A task file is one JSON object, at most 64 KiB, with only these fields:
   "description": "Writes a greeting on the owner's machine.",
   "owner": "Dana",
   "command": ["./greet.sh", "{tone}", "{loud}", "{name}"],
+  "env": { "LANG": "C" },
   "inputs": [
-    { "name": "name", "type": "text", "label": "Name", "required": true, "maxLength": 60 },
+    { "name": "name", "type": "text", "label": "Names", "required": true, "multiple": true, "maxLength": 60 },
     { "name": "tone", "type": "choice", "options": ["warm", "formal"], "default": "warm", "flag": "--tone" },
-    { "name": "loud", "type": "boolean", "flag": "--loud" },
+    { "name": "loud", "type": "boolean", "flag": "--loud", "off": "--quiet" },
     { "name": "sign", "type": "text", "label": "Signed by", "env": "SIGNATURE" }
   ],
   "output": { "kind": "text", "label": "a greeting" },
@@ -88,14 +115,16 @@ A task file is one JSON object, at most 64 KiB, with only these fields:
 | --- | --- |
 | `title`, `description`, `owner` | What recipients see; `owner` makes the page say "Dana's machine" |
 | `command` | The program and its arguments, run without a shell from the task file's directory; a relative program path starts there too. Only arguments take input; the program is fixed |
-| `inputs` | Form fields, as [gui.js](../internal/frontend/assets/gui.js) documents: `text`, `multiline`, `number`, `date`, `boolean`, `choice`, `file`; `flag`, `env` and `stdin` say how a value reaches the script, as [Input](#input) explains, and recipients never see them |
+| `env` | Variables set for every run, as `{"LANG": "C"}`, over the ones your shell gives; recipients never see them |
+| `inputs` | Form fields, as [gui.js](../internal/frontend/assets/gui.js) documents: `text`, `multiline`, `number`, `date`, `boolean`, `choice`, `file`, and `multiple` for several values; `flag`, `env`, `stdin`, `on`, `off`, `join` and `unsafe` say how a value reaches the script, as [Input](#input) explains, and recipients never see them |
 | `output` | `kind` `text` or `json` shows stdout; `file` offers stdout as a download named `name`; without `output`, recipients see only that the run finished |
-| `timeout` | Seconds from accepting a run, including receiving its files, until the run and every process it started are killed; default 60, at most 3600 |
+| `timeout` | Seconds from accepting a run, including receiving its files, until the run and every process it started are killed; default 60, as long as you need |
 | `progress` | Show each stderr line to recipients while the task runs; off by default. A recipient whose connection cannot keep up misses lines instead of slowing the task |
+| `sha256` | The script's SHA-256 when the setup last saved the file, so a copy or a renamed script can find it |
 
-Sharing an executable loads its saved task file, `<name>.runlink.json`, which
-the setup writes in this format and a command running the executable; without
-one, it makes a task without inputs that shows stdout as text.
+Sharing an executable loads its saved task file, `<script>.runlink.json`, which
+the setup writes in this format; without one, it makes a task without inputs
+that shows stdout as text.
 
 ## Input
 
@@ -107,51 +136,67 @@ Each value reaches the script the way the script takes it:
 
 | The script reads | The task file says | A run passes |
 | --- | --- | --- |
-| A positional argument, as `$1` | `"{name}"` in `command` | `Ada` |
+| A positional argument, as `$1` | `"{name}"` in `command`, wherever it goes | `Ada` |
 | An option and its value | `"{name}"` in `command`, and `"flag": "--name"` | `--name Ada` |
 | An option joined to its value | `"flag": "--name="`, or `"--name={name}"` in `command` | `--name=Ada` |
 | A flag | a boolean with `"flag": "--loud"` | `--loud` when on, nothing when off |
+| A flag, and another for off | a boolean with `"flag": "--color", "off": "--no-color"` | `--color` or `--no-color` |
+| Other texts for a boolean | `"on": "yes", "off": "no"`, as an argument, variable or stdin line | `yes` or `no`; an empty text passes nothing |
 | Part of an argument | `"out-{day}.csv"` in `command` | `out-2026-10-21.csv` |
+| Several values, as `"$@"` | `"multiple": true` | `a b`, each its own argument; with a flag, `--tag a --tag b` |
+| Several values as one | `"multiple": true, "join": ","` | `a,b` |
 | An environment variable | `"env": "NAME"` | `NAME=Ada` for the run |
+| A fixed variable | `"env": {"MODE": "prod"}` beside `command` | `MODE=prod` for every run |
 | A line of stdin, as a prompt reads it | `"stdin": true` | `Ada` and a newline |
-| A file on stdin | a file with `"stdin": true` | the file's contents |
+| A file on stdin | a file with `"stdin": true` | the file's contents; several files one after another |
 | JSON on stdin | nothing more | `{"name":"Ada"}`, when no input has `stdin` |
 
 - `{name}` is replaced once in each argument, so a value containing braces stays
-  literal: numbers in plain decimal, booleans as `true` or `false`, a file as the
-  path below. Arguments run in the order `command` lists them; the setup puts
-  options first, as `getopts` and Go's `flag` package need.
+  literal: numbers in plain decimal, booleans as `true` or `false` unless `on`
+  and `off` say otherwise, a file as the path below. Arguments run in the order
+  `command` lists them; the setup asks where each positional argument goes and
+  puts options before them, as `getopts` and Go's `flag` package need.
 - An absent optional value leaves its argument out, with its flag. A lone
   `{name}` without a flag stays as empty text while a later positional argument
-  is passed, so that one keeps its place: `./greet.sh "" Ada`. A variable is unset, even when
-  your shell sets it, and a stdin line is empty.
+  is passed, so that one keeps its place: `./greet.sh "" Ada`. A variable is
+  unset, even when your shell sets it, and a stdin line is empty.
+- Several values arrive as a list in the form. An argument holding the input
+  repeats once per value, flag included, unless `join` makes the values one
+  text; an argument can hold only one such input. A variable gets them a line
+  each, stdin a line each, and the JSON a list. `required` asks for at least one.
 - A text value that starts an argument, alone, after a separate flag, or before
   more text as in `{name}.txt`, may not start with `-`, so it cannot become an
   option. A flag ending in `=`, or a `--` argument before it in `command`,
   allows it. A run that would still start an argument with `-` from a value
-  fails without running.
+  fails without running. When the script should take such values,
+  `"unsafe": true` on the input lets them through; your terminal says when a
+  value was refused, and the summary and every share say which inputs are unsafe.
 - Inputs with `stdin` go one line each, in order; a value already ending in a
-  newline gets no other. A file takes stdin alone. Without `stdin`, stdin carries
+  newline gets no other. Files take stdin alone. Without `stdin`, stdin carries
   all values as one JSON object, absent optional values left out; with it, every
   other input must reach the script through `command` or `env`.
 - A variable is recipient text in every program the script starts, so name one
   only the script reads. Names that change how programs start, such as `PATH`,
   `IFS`, `BASH_ENV`, `NODE_OPTIONS`, `PYTHONPATH` and those starting with `LD_`
-  or `DYLD_`, are refused.
+  or `DYLD_`, let a recipient run other code, so an input sets one only with
+  `"unsafe": true`; the setup asks before adding it. A fixed variable is your
+  own text and can be any name.
 
-Not covered yet: several values for one input, such as a list of files or a
-repeated option, which needs a list field on the page; a flag that becomes
-`--no-name` when off; and fixed variables for every run, which the script can set.
+Not covered yet: a flag repeated to count, as `-vvv`; two inputs of several
+values in one argument, as pairs; a script that needs a terminal for its
+input, rather than stdin; and a script moved to another folder without its task
+file, which starts afresh.
 
 A file input's value is the path of the recipient's file, stored under its own
-name in a new private directory and deleted with it when the run ends. `maxBytes`
-limits its size, at most and by default 16 MiB. `accept` only filters the
-recipient's file picker: the script gets whatever bytes the recipient sends.
+name in a new private directory and deleted with it when the run ends; several
+files keep their own names even when they match. `maxBytes` limits each file's
+size, by default 16 MiB, and can be as large as you allow. `accept` only filters
+the recipient's file picker: the script gets whatever bytes the recipient sends.
 
 ## Limits
 
 One run at a time per task, up to 16 recipients connected at once, input up to
-64 KB plus files up to 16 MiB each, stdout up to 1 MB per run, and at most 500
+64 KB plus files up to `maxBytes` each, stdout up to 1 MB per run, and at most 500
 progress lines per run. A
 non-zero exit status shows as a failure without detail; your terminal has the
 script's stderr. A run ends when its command exits: anything it started in the
