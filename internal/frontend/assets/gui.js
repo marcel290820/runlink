@@ -15,10 +15,12 @@
 //   pairs: [[name, ...]], multiple inputs other than files whose values go together, as
 //   -p {host}:{port}; each group is filled in as rows, with as many values for each
 //   Dates are YYYY-MM-DD strings. A property of the wrong type fails the whole definition.
-// task.run(values, onProgress) settles when the run does. values maps each field name
+// task.run(values, onProgress, ask) settles when the run does. values maps each field name
 // to its value, or a list of them for a multiple field; empty optional fields are left
 // out and files are File objects.
-//   onProgress({ stage: 'accepted' }) or onProgress({ stage: 'running', message?, fraction? })
+//   onProgress({ stage: 'accepted' }), onProgress({ stage: 'running', message?, fraction? })
+//   or, for a result the recipient took past 1 MB, onProgress({ stage: 'receiving', received, size })
+//   ask(size) resolves to true to receive a result of size bytes, more than 1 MB
 //   resolves to [{ kind: 'text' | 'json', label?, value } | { kind: 'file', label?, name, blob }]
 //   rejects with an Error whose code is invalid (with fields: { name: message }), failed,
 //   timeout, stopped, disconnected, or unknown, and whose message the owner chose to expose.
@@ -655,7 +657,7 @@
     addEventListener('dragover', event => event.preventDefault());
     addEventListener('drop', event => event.preventDefault());
 
-    let busy = false, runs = 0, started = 0, timer = 0, spoken = 0, beats = 0, downloads = [];
+    let busy = false, runs = 0, started = 0, timer = 0, spoken = 0, beats = 0, downloads = [], took = 0, declined = 0;
     // Leaving mid-run drops the live view and the session; ask first.
     addEventListener('beforeunload', event => { if (busy) event.preventDefault(); });
     const say = text => { live.textContent = text; spoken = Date.now(); };
@@ -707,7 +709,21 @@
         say(`${upper(machine)} accepted the run.`);
         return;
       }
-      if (update?.stage !== 'running') return;
+      if (update?.stage === 'receiving') {
+        if (!Number.isFinite(update.received) || !(update.size > 0)) return;
+        if (stage !== 'receiving') {
+          show('receiving', 'Receiving', '');
+          retitle('Receiving');
+          say(`Receiving the result, ${bytes(update.size)}.`);
+        }
+        const fraction = Math.min(1, Math.max(0, update.received / update.size));
+        delete bench.dataset.progress;
+        bench.style.setProperty('--progress', String(fraction));
+        percent.textContent = `${Math.floor(fraction * 100)}%`;
+        caption.textContent = `${bytes(update.received)} of ${bytes(update.size)}`;
+        return;
+      }
+      if (update?.stage !== 'running' || stage === 'asking' || stage === 'receiving') return;
       if (stage !== 'running') {
         started = performance.now();
         bench.dataset.progress = 'unknown';
@@ -734,6 +750,29 @@
         bench.style.setProperty('--progress', String(fraction));
         percent.textContent = `${Math.floor(fraction * 100)}%`;
       }
+    }
+
+    // A result past 1 MB waits for the recipient's say: it would fill this tab's memory.
+    function ask(size) {
+      clearInterval(timer);
+      took = performance.now() - started;
+      show('asking', 'Finished', 'The result waits for your answer');
+      retitle('Finished');
+      return new Promise(resolve => {
+        const answer = yes => {
+          declined = yes ? 0 : size;
+          result.replaceChildren(expect());
+          resolve(yes);
+        };
+        const take = el('button', { class: 'primary', type: 'button', onclick: () => answer(true) }, icon('download'), `Receive ${bytes(size)}`);
+        const waiting = document.activeElement === sent || document.activeElement === document.body;
+        result.replaceChildren(el('div', { class: 'ask' }, el('strong', {}, icon('download'), `The result is ${bytes(size)}`),
+          el('p', { text: `That's more than the 1 MB this page takes without asking. It downloads as a file once it arrives, and stays in this tab's memory until you leave.` }),
+          el('div', { class: 'actions' }, take, el('button', { class: 'quiet', type: 'button', onclick: () => answer(false), text: "Don't receive" }))));
+        say(`Finished. The result is ${bytes(size)}, more than this page takes without asking. Receive it?`);
+        reveal(output);
+        if (waiting) take.focus({ preventScroll: true });
+      });
     }
 
     function copy(text) {
@@ -783,7 +822,9 @@
     function finish(outputs, elapsed) {
       if (!Array.isArray(outputs)) throw new Error('Unreadable result');
       const nodes = outputs.length ? outputs.flatMap(render).filter(Boolean)
-        : [el('p', { class: 'finished' }, icon('done'), el('span', { text: `Finished on ${machine}. This task has no result to show.` }))];
+        : [el('p', { class: 'finished' }, icon('done'), el('span', { text: declined
+          ? `Finished on ${machine}. You chose not to receive its ${bytes(declined)} result; run it again to get one.`
+          : `Finished on ${machine}. This task has no result to show.` }))];
       result.replaceChildren(...nodes);
       percent.textContent = '';
       show('done', 'Done', `Took ${duration(elapsed)}`);
@@ -839,6 +880,7 @@
       const run = ++runs;
       downloads.forEach(url => URL.revokeObjectURL(url));
       downloads = [];
+      took = declined = 0;
       // The form becomes a receipt of what was sent; focus waits on the status line.
       const focused = form.contains(document.activeElement);
       if (fields.length) fieldset.disabled = true;
@@ -861,9 +903,9 @@
       let rejected = null;
       try {
         // A late update from an earlier run never reaches this one.
-        const outputs = await task.run(values, update => { if (run === runs) progress(update); });
+        const outputs = await task.run(values, update => { if (run === runs) progress(update); }, ask);
         try {
-          finish(outputs, performance.now() - started);
+          finish(outputs, took || performance.now() - started);
         } catch {
           fail({ code: 'unreadable' }, performance.now() - started);
         }

@@ -215,8 +215,12 @@ the recipient's file picker: the script gets whatever bytes the recipient sends.
 ## Limits
 
 One run at a time per task, up to 16 recipients connected at once, input up to
-64 KB plus files up to `maxBytes` each, stdout up to 1 MB per run, and at most 500
-progress lines per run. A
+64 KB plus files up to `maxBytes` each, stdout up to 100 MB per run, and at most
+500 progress lines per run. A result past 1 MB arrives only when the recipient
+agrees: the page asks with its size, shows how much has arrived, and offers it
+as a download, and a declined one is noted in your terminal. Until the
+recipient answers, the output waits in a deleted temporary file on your
+machine. A
 non-zero exit status shows as a failure without detail; your terminal has the
 script's stderr. A run ends when its command exits: anything it started in the
 background is killed then. A recipient who disconnects mid-run does not stop it; one

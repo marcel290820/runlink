@@ -94,7 +94,7 @@ function installTask(definition) {
   window.calls = [];
   window.task = {
     definition,
-    run: (values, progress) => new Promise((resolve, reject) => window.calls.push({ values, progress, resolve, reject })),
+    run: (values, progress, ask) => new Promise((resolve, reject) => window.calls.push({ values, progress, ask, resolve, reject })),
   };
 }
 
@@ -372,6 +372,34 @@ try {
   await page.waitForFunction(() => document.querySelector('#input-0-error').textContent.includes('Fill in every field'));
   assert.equal(await page.locator('.together [aria-invalid="true"]').count(), 9);
 
+  // A result past 1 MB waits for the recipient: the page asks, shows how much has
+  // arrived, and finishes without it when the recipient declines.
+  await page.evaluate(installTask, { title: 'Big', output: { kind: 'text' } });
+  await page.evaluate(async data => (await import('/assets/loader.mjs')).mountGUI(new Uint8Array(data), window.task), gui);
+  for (const [take, call] of [[true, 0], [false, 1]]) {
+    await page.locator('.run').click();
+    await page.evaluate(call => {
+      window.calls[call].progress({ stage: 'running' });
+      window.answer = window.calls[call].ask(37_200_000);
+    }, call);
+    await page.locator('.ask').waitFor();
+    assert.equal(await page.locator('.bench').getAttribute('data-stage'), 'asking');
+    assert.equal(await page.locator('.ask strong').textContent(), 'The result is 37 MB');
+    assert.equal(await page.evaluate(() => document.activeElement.textContent), 'Receive 37 MB');
+    await page.getByRole('button', { name: take ? 'Receive 37 MB' : "Don't receive" }).click();
+    assert.equal(await page.evaluate(() => window.answer), take);
+    if (take) {
+      await page.evaluate(() => window.calls[0].progress({ stage: 'receiving', received: 18_600_000, size: 37_200_000 }));
+      assert.deepEqual(await page.evaluate(() => [document.querySelector('.bench').dataset.stage, document.querySelector('.readout').textContent,
+        document.querySelector('.caption').textContent, document.querySelector('.pct').textContent]), ['receiving', 'Receiving', '19 MB of 37 MB', '50%']);
+      await page.evaluate(() => window.calls[0].resolve([{ kind: 'file', name: 'output.txt', blob: new Blob(['x']) }]));
+      await page.locator('a.download').waitFor();
+    } else {
+      await page.evaluate(() => window.calls[1].resolve([]));
+      await page.waitForFunction(() => document.querySelector('.finished')?.textContent.includes('You chose not to receive its 37 MB result'));
+    }
+  }
+
   // A definition the GUI does not understand, down to one property's type, fails loudly instead of rendering.
   assert.deepEqual(await page.evaluate(async data => {
     const { mountGUI } = await import('/assets/loader.mjs');
@@ -411,7 +439,7 @@ try {
   assert.equal((await fetch(`${origin}/assets/loader.mjs`, { headers: { 'Service-Worker': 'script' } })).status, 403);
   assert.deepEqual(errors, []);
   console.log('Chromium: fragment cleanup, reload, secret entry, fonts, GUI verification, input checks, run states, ' +
-    'download-only files, fields of several values, rows of values that go together, ingress and worker isolation passed');
+    'download-only files, fields of several values, rows of values that go together, the prompt for a large result, ingress and worker isolation passed');
 } finally {
   // Every teardown step runs even when another fails; the first failure is reported.
   upstream.close();

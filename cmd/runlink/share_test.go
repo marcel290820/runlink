@@ -29,8 +29,9 @@ import (
 
 // browser is a test peer that speaks the loader's side of the protocol.
 type browser struct {
-	pc *webrtc.PeerConnection
-	ch datachannel.ReadWriteCloserDeadliner
+	pc      *webrtc.PeerConnection
+	ch      datachannel.ReadWriteCloserDeadliner
+	decline bool // results past what the page takes without asking
 }
 
 // offerer creates a peer with the loader's data channel and its complete offer.
@@ -209,11 +210,20 @@ func (b *browser) run(t *testing.T, values map[string]any, files ...[]byte) (sta
 			Stage, Message string
 			Error          *runError
 			Done           bool
+			Size           *int64
 		}
 		if err := json.Unmarshal(data, &message); err != nil {
 			t.Fatal(err)
 		}
 		switch {
+		case message.Size != nil:
+			// A result past what a page takes without asking waits for its say.
+			if *message.Size > unasked {
+				if err := send(b.ch, map[string]bool{"receive": !b.decline}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			continue
 		case message.Error != nil:
 			return stages, out.String(), message.Error
 		case message.Done:
@@ -776,5 +786,41 @@ func TestClipboardAndBrowse(t *testing.T) {
 	opened, _ := os.ReadFile(got + ".url")
 	if string(copied) != "link" || string(opened) != "http://x/#k" {
 		t.Fatalf("copied %q, opened %q", copied, opened)
+	}
+}
+
+// A result past what a page takes without asking waits for the recipient:
+// declined, nothing is sent and the owner hears of it; taken, it arrives
+// whole. Up to that size it is sent without asking.
+func TestLargeResultsWaitForTheRecipient(t *testing.T) {
+	tk, err := loadTask(writeTask(t, `head -c "$1" /dev/zero | tr '\0' x`, `{"title": "T", "command": ["./task.sh", "{size}"],
+		"output": {"kind": "text"}, "inputs": [{"name": "size", "type": "number", "required": true}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const id = "12345678-1234-4234-8234-123456789abc"
+	secret := key()
+	var log lockedBuffer
+	b := direct(t, newSharer(t.Context(), tk, id, secret, plainView(&log)))
+	b.authenticate(t, secret, id, "", "")
+	if _, ok := b.accepted(t); !ok {
+		t.Fatal("the task was refused")
+	}
+	for _, tc := range []struct {
+		size    int
+		decline bool
+		want    string
+	}{
+		{unasked + 1, true, ""},
+		{unasked + 1, false, strings.Repeat("x", unasked+1)},
+		{unasked, true, strings.Repeat("x", unasked)},
+	} {
+		b.decline = tc.decline
+		if _, output, failure := b.run(t, map[string]any{"size": float64(tc.size)}); failure != nil || output != tc.want {
+			t.Fatalf("%d bytes, declined %v: %d bytes, failure %+v", tc.size, tc.decline, len(output), failure)
+		}
+	}
+	if strings.Count(log.String(), "A recipient chose not to receive a result of 1.0 MB.") != 1 {
+		t.Fatalf("log %q", log.String())
 	}
 }

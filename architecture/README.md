@@ -24,10 +24,11 @@ Decisions live in `adr/NNNN-short-title.md`, using Status, Context, Decision, an
 | [0006](adr/0006-hetzner-deployment.md) | Separate frontend, application, and TURN servers on Hetzner | Accepted |
 | [0007](adr/0007-local-shipping-foundation.md) | Locally verified tooling, trusted ingress, and signed deployment foundation | Accepted |
 | [0008](adr/0008-local-first-proof-of-concept.md) | Local-first proof of concept with infrastructure stand-ins | Accepted |
-| [0009](adr/0009-poc-signaling-and-peer-authentication.md) | Proof-of-concept signaling and peer authentication | Accepted; review pending |
+| [0009](adr/0009-poc-signaling-and-peer-authentication.md) | Proof-of-concept signaling and peer authentication | Accepted; review pending; amended by 0013 |
 | [0010](adr/0010-input-passing.md) | Inputs reach a script the way it takes them | Accepted; amended by 0011 |
 | [0011](adr/0011-adapt-to-the-script.md) | Runlink adapts to the script | Accepted; amended by 0012 |
 | [0012](adr/0012-counts-rows-and-moved-scripts.md) | Counted flags, values in rows, and moved scripts | Accepted |
+| [0013](adr/0013-large-results-at-the-recipients-say.md) | Results past 1 MiB at the recipient's say | Accepted |
 
 ## Container view
 

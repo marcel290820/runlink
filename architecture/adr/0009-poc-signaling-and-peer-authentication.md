@@ -6,6 +6,8 @@ Accepted. Recorded 2026-10-13. Chooses the authentication protocol that
 [ADR 0002](0002-webrtc-transport.md) leaves open, for the local proof of concept
 ([ADR 0008](0008-local-first-proof-of-concept.md)). It needs the independent review
 [ADR 0003](0003-trusted-browser-client.md#gui-verification) requires before public launch.
+[ADR 0013](0013-large-results-at-the-recipients-say.md) lets a recipient agree to
+output past 1 MiB, up to 100 MiB.
 
 ## Context
 

@@ -58,11 +58,11 @@
 
   // Rotation speed in radians per second for each gate state and run stage.
   const SPIN = { opening: 0.8, secret: 0.45, connecting: 2.6, unavailable: 0.25,
-    ready: 0.7, sending: 1.8, accepted: 1.2, running: 3.4, done: 0.9, failed: 0.3 };
+    ready: 0.7, sending: 1.8, accepted: 1.2, running: 3.4, asking: 0.6, receiving: 2.6, done: 0.9, failed: 0.3 };
   // The most backing pixels the canvas may hold; a larger area draws at a lower resolution.
   const MAX_PIXELS = 8e6;
   // How fast the dust drifts along the links, relative to its own pace.
-  const DRIFT = { opening: 2, connecting: 7, unavailable: 0.3, sending: 4, running: 5, failed: 0.3 };
+  const DRIFT = { opening: 2, connecting: 7, unavailable: 0.3, sending: 4, running: 5, receiving: 8, failed: 0.3 };
   // Reasons the gate shows when the two sides never paired, rather than a far end that failed.
   const UNPAIRED = ['rejected', 'incomplete', 'nolink'];
 

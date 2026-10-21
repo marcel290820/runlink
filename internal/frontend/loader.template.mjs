@@ -183,21 +183,25 @@ function gathered(peer) {
 }
 
 // The owner's machine reads messages of up to 64 KiB and sends at most 1 MiB of
-// output per run. Every message counts as at least 1 KiB against those bounds, so
-// empty messages cannot pile up either.
-const MAX_INPUT = 65536, MAX_OUTPUT = 1 << 20, CHUNK = 16384;
+// output per run unless the recipient agrees to more, up to 100 MiB. Every
+// message counts as at least 1 KiB against those bounds, so empty messages
+// cannot pile up either.
+const MAX_INPUT = 65536, MAX_OUTPUT = 1 << 20, MAX_ASKED = 100 << 20, CHUNK = 16384;
 const cost = data => Math.max(1024, typeof data === 'string' ? data.length : data.byteLength);
 
 // session wraps the data channel. next() resolves to its messages in order;
 // send() writes one control message; upload() sends a file's bytes; end() closes
-// the connection and fails every pending read, as a failed connection does.
-// Unread messages are bounded in bytes.
+// the connection and fails every pending read, as a failed connection does;
+// ended rejects once the connection is gone. Unread messages are bounded in bytes.
 function session(peer, channel, failed) {
   const queue = [], waiting = [];
-  let closed = false, queued = 0, drained = () => {};
+  let closed = false, queued = 0, drained = () => {}, gone;
+  const ended = new Promise((_, reject) => { gone = reject; });
+  ended.catch(() => {}); // only those waiting on it need hear
   const close = () => {
     closed = true;
     drained();
+    gone(lost());
     for (const { reject } of waiting.splice(0)) reject(lost());
   };
   // Closing the peer here fires no close event on the channel.
@@ -258,7 +262,7 @@ function session(peer, channel, failed) {
       }
     }
   };
-  return { peer, next, send, upload, end };
+  return { peer, next, send, upload, end, ended };
 }
 
 const base64url = bytes => bytes.toBase64({ alphabet: 'base64url', omitPadding: true });
@@ -298,15 +302,22 @@ async function authenticate({ peer, next, send }) {
 
 // task.run for the GUI: send the values, files as their name and size, pass on
 // stages and progress, send the files once the run is accepted, in input and
-// list order, collect the output's bytes, and settle with the outcome.
-function runner({ next, send, upload, end }, definition) {
-  return async (values, progress) => {
+// list order, collect the output's bytes, and settle with the outcome. A result
+// the owner's machine announces as larger than 1 MiB comes only if ask, the
+// GUI's question to the recipient, says to take it, and an announced result
+// must arrive exactly.
+function runner({ next, send, upload, end, ended }, definition) {
+  return async (values, progress, ask) => {
     const files = (definition.inputs ?? []).flatMap(spec => [values[spec.name]].flat()).filter(value => value instanceof File);
     const announce = value => value instanceof File ? { name: value.name, size: value.size } : value;
     send({ values: Object.fromEntries(Object.entries(values).map(([name, value]) =>
       [name, Array.isArray(value) ? value.map(announce) : announce(value)])) });
     const chunks = [];
-    let received = 0, updates = 0;
+    let received = 0, bytes = 0, updates = 0, size = -1, allowed = MAX_OUTPUT, declined = false;
+    const failed = text => {
+      end();
+      return Object.assign(new Error(text), { code: 'failed' });
+    };
     for (;;) {
       const data = await next();
       // The owner's machine sends at most 500 progress lines and a few stages per run.
@@ -315,28 +326,50 @@ function runner({ next, send, upload, end }, definition) {
         throw Object.assign(new Error("The owner's machine sent more updates than this page accepts."), { code: 'failed' });
       }
       if (data instanceof ArrayBuffer) {
-        if ((received += cost(data)) > MAX_OUTPUT) {
-          end();
-          throw Object.assign(new Error('The result is larger than 1 MB, more than this page accepts.'), { code: 'failed' });
+        bytes += data.byteLength;
+        const over = declined || size >= 0 && bytes > size;
+        if (over || (received += cost(data)) > allowed) {
+          throw failed(over ? "The owner's machine sent more than the result it announced."
+            : 'The result is larger than 1 MB, more than this page accepts.');
         }
         chunks.push(data);
+        if (allowed > MAX_OUTPUT) progress({ stage: 'receiving', received: Math.min(received, size), size });
         continue;
       }
       const message = parse(data);
       if (typeof message.stage === 'string') {
         progress(message);
         if (message.stage === 'accepted') for (const file of files.splice(0)) await upload(file);
+      } else if (Number.isSafeInteger(message.size) && message.size >= 0 && size < 0) {
+        // The size comes before any of the result.
+        if (bytes > 0) throw failed("The owner's machine sent its result before announcing it.");
+        if ((size = message.size) > MAX_ASKED) throw failed('The result is larger than 100 MB, more than this page takes.');
+        if (size > MAX_OUTPUT) {
+          // The last message may be short, and counts as 1 KiB. A connection lost
+          // while the recipient decides ends the run.
+          const take = typeof ask === 'function' && await Promise.race([ask(size), ended]) === true;
+          send({ receive: take });
+          if (take) allowed = size + 1024;
+          else declined = true;
+        }
       }
       else if (message.error !== null && typeof message.error === 'object') {
         const { code, message: text, fields } = message.error;
         throw Object.assign(new Error(typeof text === 'string' ? text : ''), { code, fields });
-      } else if (message.done === true) return outputs(definition.output, new Blob(chunks));
+      } else if (message.done === true) {
+        if (size >= 0 && !declined && bytes !== size) throw failed("The owner's machine sent less than the result it announced.");
+        return declined ? [] : outputs(definition.output, new Blob(chunks));
+      }
       else throw lost();
     }
   };
 }
 
 async function outputs(output, blob) {
+  // Past 1 MiB, text and data download instead of showing.
+  if (blob.size > MAX_OUTPUT && output?.kind !== 'file') {
+    return [{ kind: 'file', name: output?.kind === 'json' ? 'output.json' : 'output.txt', blob }];
+  }
   switch (output?.kind) {
     case 'text': return [{ kind: 'text', value: await blob.text() }];
     case 'json': return [{ kind: 'json', value: JSON.parse(await blob.text()) }];

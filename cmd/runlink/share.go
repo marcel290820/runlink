@@ -482,12 +482,49 @@ func (s *sharer) execute(ch datachannel.ReadWriteCloserDeadliner, values map[str
 	if err != nil {
 		return err
 	}
-	for len(stdout) > 0 {
-		chunk := stdout[:min(outputChunk, len(stdout))]
-		if err := write(ch, chunk, false); err != nil {
+	defer stdout.Close()
+	return s.deliver(ch, stdout)
+}
+
+// deliver sends a run's output: its size, then its bytes, but more than a
+// recipient takes without asking only once the recipient says to.
+func (s *sharer) deliver(ch datachannel.ReadWriteCloserDeadliner, stdout *os.File) error {
+	info, err := stdout.Stat()
+	if err != nil {
+		return err
+	}
+	size := info.Size()
+	if s.task.Output == nil {
+		size = 0 // the page shows only that the run finished
+	}
+	if err := send(ch, map[string]int64{"size": size}); err != nil {
+		return err
+	}
+	if size > unasked {
+		var reply struct {
+			Receive *bool `json:"receive"`
+		}
+		if err := read(ch, &reply); err != nil {
 			return err
 		}
-		stdout = stdout[len(chunk):]
+		if reply.Receive == nil {
+			return errors.New("expected whether to receive the result")
+		}
+		if !*reply.Receive {
+			s.view.notice(fmt.Sprintf("A recipient chose not to receive a result of %.1f MB.", float64(size)/1e6))
+			return send(ch, map[string]bool{"done": true})
+		}
+	}
+	buf := make([]byte, outputChunk)
+	for left := size; left > 0; {
+		n, err := io.ReadFull(stdout, buf[:min(int64(len(buf)), left)])
+		if err != nil {
+			return err
+		}
+		if err := write(ch, buf[:n], false); err != nil {
+			return err
+		}
+		left -= int64(n)
 	}
 	return send(ch, map[string]bool{"done": true})
 }

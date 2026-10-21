@@ -19,6 +19,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unicode"
@@ -91,9 +92,10 @@ type task struct {
 
 const (
 	maxTaskFile    = 64 << 10
-	maxOutput      = 1 << 20
-	maxUpload      = 16 << 20 // largest file a recipient can send, unless the owner says more
-	maxProgress    = 500      // lines per run
+	maxOutput      = 100 << 20 // a run's stdout
+	unasked        = 1 << 20   // a recipient takes more only by saying so
+	maxUpload      = 16 << 20  // largest file a recipient can send, unless the owner says more
+	maxProgress    = 500       // lines per run
 	defaultTimeout = time.Minute
 )
 
@@ -865,10 +867,11 @@ func (t *task) stdin(values map[string]any, args map[string][]string) (r io.Read
 }
 
 // run executes the command for checked values, with args holding each one's
-// text, and returns its bounded stdout. Each stderr line goes to line. The
-// command and everything it starts run in one process group, which ctx's end
-// or the timeout kills.
-func (t *task) run(ctx context.Context, values map[string]any, args map[string][]string, line func(string)) ([]byte, error) {
+// text, and returns its stdout, at most 100 MiB, in a file already deleted,
+// which goes with closing it. Each stderr line goes to line. The command and
+// everything it starts run in one process group, which ctx's end or the
+// timeout kills.
+func (t *task) run(ctx context.Context, values map[string]any, args map[string][]string, line func(string)) (*os.File, error) {
 	ctx, cancel := context.WithTimeout(ctx, t.timeout())
 	defer cancel()
 	stdin, done, err := t.stdin(values, args)
@@ -904,15 +907,30 @@ func (t *task) run(ctx context.Context, values map[string]any, args map[string][
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.WaitDelay = time.Second
-	var stdout bytes.Buffer
-	tooLarge := false
+	// On disk, the output can wait for a recipient to say whether to take it.
+	stdout, err := newOutput()
+	if err != nil {
+		return nil, err
+	}
+	// A write fails the run even when Run reports only ErrWaitDelay, and none
+	// lands once the run is over.
+	var mu sync.Mutex
+	written, tooLarge, over, writeErr := int64(0), false, false, error(nil)
 	cmd.Stdout = writerFunc(func(p []byte) (int, error) {
-		if stdout.Len()+len(p) > maxOutput {
+		mu.Lock()
+		defer mu.Unlock()
+		switch {
+		case over:
+			return 0, os.ErrClosed
+		case written+int64(len(p)) > maxOutput:
 			tooLarge = true
 			cancel()
 			return 0, io.ErrShortWrite
 		}
-		return stdout.Write(p)
+		n, err := stdout.Write(p)
+		written += int64(n)
+		writeErr = cmp.Or(writeErr, err)
+		return n, err
 	})
 	stderr := &lines{emit: line}
 	cmd.Stderr = stderr
@@ -922,19 +940,50 @@ func (t *task) run(ctx context.Context, values map[string]any, args map[string][
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
 	stderr.flush()
+	mu.Lock()
+	over = true
+	mu.Unlock()
 	switch {
 	case tooLarge:
-		return nil, &runError{Code: "failed", Message: "The task's output is larger than 1 MB."}
+		err = &runError{Code: "failed", Message: "The task's output is larger than 100 MB."}
+	case writeErr != nil:
+		err = &runError{Code: "failed", cause: fmt.Errorf("keeping the output: %w", writeErr)}
 	case errors.Is(ctx.Err(), context.DeadlineExceeded):
-		return nil, &runError{Code: "timeout"}
+		err = &runError{Code: "timeout"}
 	case ctx.Err() != nil:
-		return nil, &runError{Code: "stopped"}
+		err = &runError{Code: "stopped"}
 	case err != nil && !errors.Is(err, exec.ErrWaitDelay): // that one: exit 0, output held open
-		return nil, &runError{Code: "failed", cause: err}
-	case t.Output != nil && t.Output.Kind == "json" && !json.Valid(stdout.Bytes()):
-		return nil, &runError{Code: "failed", Message: "The task's output isn't valid JSON."}
+		err = &runError{Code: "failed", cause: err}
+	case t.Output != nil && t.Output.Kind == "json":
+		// ponytail: the whole output in memory for a moment; a streaming check if 100 MiB is too much.
+		data, readErr := io.ReadAll(io.NewSectionReader(stdout, 0, written))
+		if err = readErr; err == nil && !json.Valid(data) {
+			err = &runError{Code: "failed", Message: "The task's output isn't valid JSON."}
+		}
+	default:
+		err = nil
 	}
-	return stdout.Bytes(), nil
+	if err == nil {
+		_, err = stdout.Seek(0, io.SeekStart)
+	}
+	if err != nil {
+		stdout.Close()
+		return nil, err
+	}
+	return stdout, nil
+}
+
+// newOutput makes the file a run's stdout goes to, already deleted.
+var newOutput = func() (*os.File, error) {
+	f, err := os.CreateTemp("", "runlink-output-")
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Remove(f.Name()); err != nil {
+		f.Close()
+		return nil, err
+	}
+	return f, nil
 }
 
 // maxTimeout is the longest timeout a time.Duration holds, in seconds.

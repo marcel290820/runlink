@@ -142,7 +142,10 @@ const reason = page => page.locator('#gate').getAttribute('data-reason');
 // link. A silent owner opens the channel and never proves anything; a flooding
 // owner authenticates, then answers a run with more than 1 MB of output, or with
 // endless empty messages ('empty') or progress updates ('chatty'), or sends empty
-// messages unasked before any run ('idle').
+// messages unasked before any run ('idle'). Announcing a 2 MiB result, it sends
+// one byte more once the recipient agrees ('liar') or one byte less ('short'),
+// sends some before announcing it ('early'), or leaves while the recipient
+// decides ('leaver').
 async function hostileOwner({ mode, gui }) {
   const socket = new WebSocket(`ws://${location.host}/api/v1/share`);
   const messages = [];
@@ -177,7 +180,15 @@ async function hostileOwner({ mode, gui }) {
         } else if (message.values && mode !== 'idle') {
           channel.send(JSON.stringify({ stage: 'running' }));
           if (mode === 'chatty') for (let i = 0; i < 5000; i++) channel.send(JSON.stringify({ stage: 'running', message: 'busy' }));
-          else for (let i = 0; i < (mode === 'empty' ? 5000 : 80); i++) channel.send(new Uint8Array(mode === 'empty' ? 0 : 16384));
+          else if (['liar', 'short', 'early', 'leaver'].includes(mode)) {
+            if (mode === 'early') channel.send(new Uint8Array(1024));
+            channel.send(JSON.stringify({ size: 2 << 20 }));
+            if (mode === 'leaver') setTimeout(() => peer.close(), 1000);
+          } else for (let i = 0; i < (mode === 'empty' ? 5000 : 80); i++) channel.send(new Uint8Array(mode === 'empty' ? 0 : 16384));
+        } else if (message.receive === true) {
+          for (let i = 0; i < 127; i++) channel.send(new Uint8Array(16384));
+          channel.send(new Uint8Array(mode === 'liar' ? 16385 : 16383));
+          channel.send(JSON.stringify({ done: true }));
         }
       };
     };
@@ -259,6 +270,32 @@ try {
   assert.deepEqual(sorting.errors, []);
   await sorting.page.context().close();
 
+  // A result past 1 MB waits for the recipient's say over the relay path: declined,
+  // the run finishes without it, and the owner's terminal says so; received, it
+  // arrives whole and downloads.
+  const bigTask = join(state, 'big.json');
+  await writeFile(bigTask, JSON.stringify({ title: 'Big', command: ['sh', '-c', 'yes runlink | head -c 3000000'], output: { kind: 'text' } }));
+  const big = share(stack.frontend, bigTask);
+  owners.push(big.owner);
+  const { url: bigLink } = await within(big.link, 10_000, 'runlink share big');
+  keys.push(new URL(bigLink).hash.slice(1));
+  const large = await recipient(bigLink, true);
+  await large.page.waitForSelector('.title', { timeout: 20_000 });
+  for (const take of [false, true]) {
+    await large.page.locator('.run').click();
+    await large.page.locator('.ask').waitFor({ timeout: 15_000 });
+    assert.equal(await large.page.locator('.ask strong').textContent(), 'The result is 3.0 MB');
+    await large.page.getByRole('button', { name: take ? 'Receive 3.0 MB' : "Don't receive" }).click();
+    await large.page.waitForFunction(() => document.querySelector('.bench').dataset.stage === 'done', null, { timeout: 60_000 });
+  }
+  assert(big.events.some(line => line.endsWith('A recipient chose not to receive a result of 3.0 MB.')), big.events.join('\n'));
+  const [whole] = await Promise.all([large.page.waitForEvent('download'), large.page.locator('a.download').click()]);
+  assert.equal(whole.suggestedFilename(), 'output.txt');
+  assert.equal(await readFile(await whole.path(), 'utf8'), 'runlink\n'.repeat(375_000));
+  assert.equal((await path(large.page))[0], 'relay');
+  assert.deepEqual(large.errors, []);
+  await large.page.context().close();
+
   // Separate secret: a wrong secret is refused by the owner's machine, the right one opens the task.
   const apart = share(stack.frontend, 'examples/greet.json', '--separate-secret');
   owners.push(apart.owner);
@@ -318,13 +355,25 @@ try {
   await hostile.goto(`${stack.frontend}/`);
   const gui = [...await readFile('internal/frontend/assets/gui.js')];
   const silent = await recipient(await hostile.evaluate(hostileOwner, { mode: 'silent', gui }));
-  for (const [mode, detail] of [['flood', /larger than 1 MB/], ['empty', /larger than 1 MB/], ['chatty', /more updates/]]) {
+  for (const [mode, detail] of [['flood', /larger than 1 MB/], ['empty', /larger than 1 MB/], ['chatty', /more updates/],
+    ['liar', /more than the result it announced/], ['short', /less than the result it announced/], ['early', /before announcing it/]]) {
     const flood = await recipient(await hostile.evaluate(hostileOwner, { mode, gui }));
     await flood.page.waitForSelector('.title', { timeout: 20_000 });
     await flood.page.locator('.run').click();
+    if (mode === 'liar' || mode === 'short') await flood.page.getByRole('button', { name: 'Receive 2.1 MB' }).click({ timeout: 20_000 });
     await flood.page.waitForFunction(() => document.querySelector('.bench').dataset.fault === 'failed', null, { timeout: 20_000 });
     assert.match(await flood.page.locator('.fault .detail').textContent(), detail);
+    await flood.page.context().close(); // so the browser holds no more peers than the cases at hand
   }
+  // An owner's machine that leaves while the recipient decides ends the run, and the
+  // question with it.
+  const leaver = await recipient(await hostile.evaluate(hostileOwner, { mode: 'leaver', gui }));
+  await leaver.page.waitForSelector('.title', { timeout: 20_000 });
+  await leaver.page.locator('.run').click();
+  await leaver.page.locator('.ask').waitFor({ timeout: 20_000 });
+  await leaver.page.waitForFunction(() => document.querySelector('.bench').dataset.fault === 'disconnected', null, { timeout: 30_000 });
+  assert.equal(await leaver.page.locator('.ask').count(), 0);
+  await leaver.page.context().close();
   // Unasked messages past the bound end the connection; the next run reports it.
   const idle = await recipient(await hostile.evaluate(hostileOwner, { mode: 'idle', gui }));
   await idle.page.waitForSelector('.title', { timeout: 20_000 });
@@ -334,8 +383,9 @@ try {
   await silent.page.waitForFunction(() => document.getElementById('gate').dataset.reason === 'unreachable', null, { timeout: 45_000 });
   console.log('Chromium: WebRTC data over TURN UDP and TCP relays of the local stack; forged and expired credentials rejected; ' +
     'a shared task completed from its link over direct and relay-only paths and with a separate secret; two files sorted together and downloaded over a relay; ' +
+    'a 3 MB result declined, then received whole over a relay; ' +
     'a wrong secret refused; a stopped share reported inactive; oversized input refused; a vanished owner reported mid-run; ' +
-    'a silent owner dropped at the setup deadline and a flooding one cut off past 1 MB');
+    'a silent owner dropped at the setup deadline, a flooding one cut off past 1 MB, ones sending a byte more or less than the result they announced, or some before announcing it, refused, and one leaving during the question reported');
 } finally {
   for (const owner of owners) if (owner.exitCode === null) owner.kill('SIGKILL');
   const exited = once(child, 'exit');

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"maps"
 	"os"
 	"os/exec"
@@ -174,8 +175,15 @@ func TestCheckValidatesRecipientValues(t *testing.T) {
 	}
 }
 
-// stdoutOf is a run's stdout as text.
-func stdoutOf(stdout []byte, err error) (string, error) { return string(stdout), err }
+// stdoutOf reads a run's stdout whole.
+func stdoutOf(stdout *os.File, err error) (string, error) {
+	if err != nil {
+		return "", err
+	}
+	defer stdout.Close()
+	data, err := io.ReadAll(stdout)
+	return string(data), err
+}
 
 func TestRunOutcomes(t *testing.T) {
 	for name, tc := range map[string]struct {
@@ -185,7 +193,7 @@ func TestRunOutcomes(t *testing.T) {
 	}{
 		"exit status": {script: "exit 3", code: "failed"},
 		"timeout":     {script: "sleep 5", timeout: 0.2, code: "timeout"},
-		"too large":   {script: "head -c 1048577 /dev/zero", code: "failed", message: "larger than 1 MB"},
+		"too large":   {script: "head -c 104857601 /dev/zero", code: "failed", message: "larger than 100 MB"},
 		"not JSON":    {script: "echo nope", output: "json", code: "failed", message: "valid JSON"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -220,6 +228,23 @@ func TestRunOutcomes(t *testing.T) {
 	var failure *runError
 	if !errors.As(err, &failure) || failure.Code != "stopped" || time.Since(began) > 5*time.Second {
 		t.Fatalf("%v after %v", err, time.Since(began))
+	}
+}
+
+// Output that cannot be kept fails the run, even when a background process
+// holding stderr open leaves Run to report only that it waited.
+func TestRunFailsWhenOutputCannotBeKept(t *testing.T) {
+	tk, err := loadTask(writeTask(t, "sleep 5 >&2 & echo hi", `{"title": "T", "command": ["./task.sh"], "output": {"kind": "text"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	keep := newOutput
+	t.Cleanup(func() { newOutput = keep })
+	newOutput = func() (*os.File, error) { return os.Open(os.DevNull) } // read-only, so every write fails
+	_, err = tk.run(t.Context(), map[string]any{}, nil, func(string) {})
+	var failure *runError
+	if !errors.As(err, &failure) || failure.Code != "failed" || !strings.Contains(err.Error(), "keeping the output") {
+		t.Fatalf("%v", err)
 	}
 }
 
