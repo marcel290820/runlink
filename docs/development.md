@@ -2,7 +2,7 @@
 
 ## Bootstrap and commands
 
-`scripts/bootstrap.sh` installs checksum-pinned Go 1.27.2, Node 24.21.0, OpenTofu
+`scripts/bootstrap.sh` installs checksum-pinned Go 1.27.3, Node 24.21.0, OpenTofu
 1.13.1, and ShellCheck 0.11.0. Go builds `govulncheck` 1.8.0 and actionlint 1.7.12
 from source, verified against the Go checksum database. Versions and archive checksums
 live in [tools.lock.json](../scripts/tools.lock.json). `npm ci` uses the checked-in

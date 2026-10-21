@@ -7,9 +7,9 @@
     "darwin_amd64": {
       "go": {
         "binary": "go/bin/go",
-        "sha256": "587b59182488b23aa6e5fc25110405a3e0e5b38ed2f5b2f46ed13c32aee356fe",
-        "url": "https://go.dev/dl/go1.27.2.darwin-amd64.tar.gz",
-        "version": "1.27.2"
+        "sha256": "b6f8e931e4ab497fcde6da8ae4499a58f9d258e55c8a80824a516eae5950a750",
+        "url": "https://go.dev/dl/go1.27.3.darwin-amd64.tar.gz",
+        "version": "1.27.3"
       },
       "node": {
         "binary": "node-v24.21.0-darwin-x64/bin/node",
@@ -33,9 +33,9 @@
     "darwin_arm64": {
       "go": {
         "binary": "go/bin/go",
-        "sha256": "76812b213b1b2302c978d28fa52fa92d541704b9e7d9d5db8002c50e4018c4c5",
-        "url": "https://go.dev/dl/go1.27.2.darwin-arm64.tar.gz",
-        "version": "1.27.2"
+        "sha256": "dd3908cf20959d798c1e06ebe5b72213f0505ce01373b40ce3110975a6cd99c2",
+        "url": "https://go.dev/dl/go1.27.3.darwin-arm64.tar.gz",
+        "version": "1.27.3"
       },
       "node": {
         "binary": "node-v24.21.0-darwin-arm64/bin/node",
@@ -59,9 +59,9 @@
     "linux_amd64": {
       "go": {
         "binary": "go/bin/go",
-        "sha256": "ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5",
-        "url": "https://go.dev/dl/go1.27.2.linux-amd64.tar.gz",
-        "version": "1.27.2"
+        "sha256": "65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40",
+        "url": "https://go.dev/dl/go1.27.3.linux-amd64.tar.gz",
+        "version": "1.27.3"
       },
       "node": {
         "binary": "node-v24.21.0-linux-x64/bin/node",
@@ -85,9 +85,9 @@
     "linux_arm64": {
       "go": {
         "binary": "go/bin/go",
-        "sha256": "94f3e30b8e374bc285e7dadc11e0865726b9bc6e85b841ccceaabc0214c6b7c8",
-        "url": "https://go.dev/dl/go1.27.2.linux-arm64.tar.gz",
-        "version": "1.27.2"
+        "sha256": "a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49",
+        "url": "https://go.dev/dl/go1.27.3.linux-arm64.tar.gz",
+        "version": "1.27.3"
       },
       "node": {
         "binary": "node-v24.21.0-linux-arm64/bin/node",
