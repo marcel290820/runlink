@@ -74,7 +74,7 @@ func opened(t *testing.T, pc *webrtc.PeerConnection, answer string, ch <-chan da
 	}
 	select {
 	case c := <-ch:
-		return &browser{pc, c}
+		return &browser{pc: pc, ch: c}
 	case <-time.After(15 * time.Second):
 		t.Fatal("the data channel did not open")
 		return nil
@@ -171,16 +171,16 @@ func (b *browser) next() ([]byte, bool, error) {
 }
 
 // accepted reports whether the runner sent the approved GUI and the definition.
-func (b *browser) accepted(t *testing.T) (definition, bool) {
+func (b *browser) accepted(t *testing.T) (shown, bool) {
 	t.Helper()
 	gui, text, err := b.next()
 	if err != nil {
-		return definition{}, false
+		return shown{}, false
 	}
 	if text || !bytes.Equal(gui, frontend.GUI) {
 		t.Fatal("the first message after authentication is not the GUI")
 	}
-	var message struct{ Definition definition }
+	var message struct{ Definition shown }
 	data, _, err := b.next()
 	if err != nil || json.Unmarshal(data, &message) != nil {
 		t.Fatalf("definition: %v", err)

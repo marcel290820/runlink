@@ -4,7 +4,7 @@
 // files leave the page only as downloads. Raster images may also show as a picture,
 // which cannot run script or fetch anything.
 //
-// task.definition = { title, description?, owner?, output?, inputs? }
+// task.definition = { title, description?, owner?, output?, inputs?, pairs? }
 //   owner: the owner's display name, as in "Dana's machine"
 //   output: { kind: 'text' | 'json' | 'file', label? }; label is a noun phrase, "a CSV report"
 //   inputs: [{ name, type, label?, help?, placeholder?, required?, default?,
@@ -12,6 +12,8 @@
 //   type: text | multiline | number | date | boolean | choice | file
 //   options: [value] or [{ value, label? }], where each value is a string, number, or boolean
 //   multiple: the field takes several values, and its default is a list; never a boolean
+//   pairs: [[name, ...]], multiple inputs other than files whose values go together, as
+//   -p {host}:{port}; each group is filled in as rows, with as many values for each
 //   Dates are YYYY-MM-DD strings. A property of the wrong type fails the whole definition.
 // task.run(values, onProgress) settles when the run does. values maps each field name
 // to its value, or a list of them for a multiple field; empty optional fields are left
@@ -200,10 +202,14 @@
   function validate(definition) {
     const inputs = definition?.inputs ?? [];
     const output = definition?.output;
+    const pairs = definition?.pairs ?? [];
+    const paired = pairs.flat?.() ?? [];
     const ok = isText(definition?.title) && definition.title.trim() !== '' && maybe(isText)(definition.description) &&
       maybe(isText)(definition.owner) && Array.isArray(inputs) && inputs.every(validSpec) &&
       new Set(inputs.map(spec => spec.name)).size === inputs.length &&
-      (output == null || isText(output.kind) && Object.hasOwn(KINDS, output.kind) && maybe(isText)(output.label));
+      (output == null || isText(output.kind) && Object.hasOwn(KINDS, output.kind) && maybe(isText)(output.label)) &&
+      Array.isArray(pairs) && pairs.every(group => Array.isArray(group) && group.length > 1) && new Set(paired).size === paired.length &&
+      paired.every(name => inputs.some(spec => spec.name === name && spec.multiple && spec.type !== 'file'));
     if (!ok) throw new Error('Unsupported task definition');
   }
 
@@ -211,6 +217,157 @@
     if (spec.min != null && spec.max != null) return `Use a ${noun} from ${spec.min} to ${spec.max}.`;
     const date = noun === 'date';
     return spec.min != null ? `Use ${spec.min} or ${date ? 'later' : 'more'}.` : `Use ${spec.max} or ${date ? 'earlier' : 'less'}.`;
+  }
+
+  const choices = spec => spec.options.map(option => isPlain(option) ? { value: option, label: plain(option) }
+    : { value: option.value, label: option.label || plain(option.value) });
+
+  // One value of a text, number, date, or, in a row, choice field: its control, and how
+  // to read it. A field of several values has one per row, each optional on its own.
+  function entry(spec, attrs, value, required) {
+    let control, read;
+    switch (spec.type) {
+      case 'text':
+      case 'multiline':
+        control = spec.type === 'text'
+          ? el('input', { ...attrs, class: 'control', type: 'text', autocomplete: 'off', placeholder: spec.placeholder, maxlength: spec.maxLength })
+          : el('textarea', { ...attrs, class: 'control', rows: 4, placeholder: spec.placeholder, maxlength: spec.maxLength });
+        control.value = value ?? '';
+        read = () => {
+          const value = control.value;
+          if (!value.trim()) return required ? { error: 'Enter a value.' } : {};
+          if (spec.maxLength && value.length > spec.maxLength) return { error: `Use ${spec.maxLength} characters or fewer.` };
+          return { value };
+        };
+        break;
+      case 'number':
+        control = el('input', { ...attrs, class: 'control', type: 'number', inputmode: 'decimal', placeholder: spec.placeholder,
+          min: spec.min, max: spec.max, step: spec.step ?? 'any' });
+        control.value = value == null ? '' : String(value);
+        read = () => {
+          if (control.validity.badInput) return { error: 'Enter a number.' };
+          if (control.value === '') return required ? { error: 'Enter a number.' } : {};
+          if (control.validity.rangeUnderflow || control.validity.rangeOverflow) return { error: range(spec, 'number') };
+          if (control.validity.stepMismatch) return { error: spec.step === 1 ? 'Use a whole number.' : `Use steps of ${spec.step}.` };
+          return { value: Number(control.value) };
+        };
+        break;
+      case 'date':
+        control = el('input', { ...attrs, class: 'control', type: 'date', min: spec.min, max: spec.max });
+        control.value = value ?? '';
+        read = () => {
+          if (control.validity.badInput) return { error: 'Enter a complete date.' };
+          if (!control.value) return required ? { error: 'Choose a date.' } : {};
+          if (control.validity.rangeUnderflow || control.validity.rangeOverflow) return { error: range(spec, 'date') };
+          // The receipt shows the date as the field did, in the reader's own format.
+          const text = control.valueAsDate.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'UTC' });
+          return { value: control.value, text };
+        };
+        break;
+      case 'choice': {
+        const options = choices(spec);
+        control = el('select', { ...attrs, class: 'control' }, el('option', { value: '', text: 'Choose one' }),
+          ...options.map((option, i) => el('option', { value: i, text: option.label })));
+        const at = options.findIndex(option => option.value === value);
+        control.value = at < 0 ? '' : String(at);
+        read = () => {
+          if (control.value === '') return required ? { error: 'Choose an option.' } : {};
+          const option = options[Number(control.value)];
+          return { value: option.value, text: option.label };
+        };
+        break;
+      }
+    }
+    return { control, read };
+  }
+
+  // Inputs whose values go together, as -p {host}:{port}: one field of rows, with a
+  // control for each input in every row, read as a list for each input.
+  function together(specs, index) {
+    const id = `input-${index}`;
+    const labels = specs.map(spec => spec.label?.trim() ? spec.label : spec.name);
+    const helps = specs.filter(spec => spec.help).map(spec => spec.help);
+    const help = helps.length ? el('p', { class: 'help', id: `${id}-help`, text: helps.join(' ') }) : null;
+    const error = el('p', { class: 'error', id: `${id}-error` });
+    const shown = el('span', { class: 'shown' });
+    const describedby = [help?.id, error.id].filter(Boolean).join(' ');
+    const required = specs.some(spec => spec.required);
+    const heads = el('div', { class: 'heads', 'aria-hidden': 'true' }, ...labels.map((text, i) => el('span', {}, text,
+      !required && i === labels.length - 1 ? el('span', { class: 'optional', text: 'optional' }) : null)));
+    const grid = el('div', { class: 'rows' });
+    for (const node of [heads, grid]) node.style.setProperty('--cols', String(specs.length));
+    const entries = [];
+    let target;
+    const relabel = () => entries.forEach((item, i) => {
+      item.cells.forEach((cell, j) => {
+        cell.control.id = i || j ? `${id}-${i}-${j}` : id;
+        cell.control.setAttribute('aria-label', `${labels[j]}, row ${i + 1}`);
+      });
+      item.remove.setAttribute('aria-label', `Remove row ${i + 1}`);
+    });
+    const add = (values, focus) => {
+      const item = { cells: specs.map((spec, j) => entry(spec, { 'aria-describedby': describedby }, values[j], false)) };
+      item.remove = el('button', { class: 'remove', type: 'button', onclick: () => {
+        const at = entries.indexOf(item);
+        if (entries.length === 1) for (const cell of item.cells) cell.control.value = '';
+        else {
+          entries.splice(at, 1);
+          item.row.remove();
+          relabel();
+        }
+        invalid('');
+        entries[Math.min(at, entries.length - 1)].cells[0].control.focus();
+      } }, icon('close'));
+      item.row = el('div', { class: 'row cells' }, ...item.cells.map(cell => el('span', { class: 'cell' }, cell.control)), item.remove);
+      item.row.style.setProperty('--cols', String(specs.length));
+      entries.push(item);
+      grid.append(item.row);
+      relabel();
+      if (focus) item.cells[0].control.focus();
+    };
+    const count = Math.max(1, ...specs.map(spec => spec.default?.length ?? 0));
+    for (let i = 0; i < count; i++) add(specs.map(spec => spec.default?.[i]), false);
+    const more = el('button', { class: 'quiet add', type: 'button', onclick: () => add([], true) }, icon('plus'), 'Add another');
+    const node = el('fieldset', { class: 'field together', 'aria-describedby': describedby },
+      el('legend', { class: 'sr', text: `${listed(labels, 'and')}${required ? '' : ', optional'}` }), heads,
+      el('div', { class: 'slot' }, grid, more, shown), help, error);
+    const marked = () => entries.flatMap(item => item.cells.map(cell => cell.control));
+    // A row is all filled in, or left empty and skipped.
+    const read = () => {
+      const lists = specs.map(() => []), texts = [];
+      for (const item of entries) {
+        const got = item.cells.map(cell => cell.read());
+        const wrong = got.findIndex(value => value.error);
+        if (wrong >= 0) {
+          target = item.cells[wrong].control;
+          return got[wrong];
+        }
+        const empty = got.findIndex(value => value.value === undefined);
+        if (empty >= 0 && got.some(value => value.value !== undefined)) {
+          target = item.cells[empty].control;
+          return { error: `Fill in ${labels[empty]} too, or remove the row.` };
+        }
+        if (empty >= 0) continue;
+        got.forEach((value, j) => lists[j].push(value.value));
+        texts.push(got.map(value => value.text ?? plain(value.value)).join(DOT));
+      }
+      target = entries[0].cells[0].control;
+      if (!texts.length) return required ? { error: 'Fill in a row.' } : {};
+      return { value: lists, text: texts.join('\n') };
+    };
+    function invalid(message) {
+      error.replaceChildren(...message ? [icon('alert'), el('span', { text: message })] : []);
+      for (const control of marked()) {
+        if (message) control.setAttribute('aria-invalid', 'true'); else control.removeAttribute('aria-invalid');
+      }
+    }
+    const lock = ({ value, text }) => {
+      shown.textContent = value === undefined ? 'None' : text;
+      shown.classList.toggle('empty', value === undefined);
+    };
+    node.addEventListener('input', () => invalid(''));
+    node.addEventListener('change', () => invalid(''));
+    return { names: specs.map(spec => spec.name), node, read, invalid, lock, focus: () => (target ?? entries[0].cells[0].control).focus() };
   }
 
   // One input: its markup, how to read and check it, where its error shows, and the
@@ -225,8 +382,7 @@
     const describedby = [help?.id, error.id].filter(Boolean).join(' ');
     let options, chosen = -1;
     if (spec.type === 'choice') {
-      options = spec.options.map(option => isPlain(option) ? { value: option, label: plain(option) }
-        : { value: option.value, label: option.label || plain(option.value) });
+      options = choices(spec);
       chosen = options.findIndex(option => option.value === spec.default);
       // A picked radio cannot be cleared, so an optional choice without a preset offers None.
       if (chosen < 0 && !spec.required && !spec.multiple) { options.unshift({ label: 'None' }); chosen = 0; }
@@ -237,59 +393,13 @@
     const common = { id, 'aria-describedby': describedby, required: spec.required === true };
     let node, control, read, marked, target;
 
-    // One value of a text, number, or date field: its control, and how to read it.
-    // A field of several values has one per row, each optional on its own.
-    const entry = (attrs, value, required) => {
-      let control, read;
-      switch (spec.type) {
-        case 'text':
-        case 'multiline':
-          control = spec.type === 'text'
-            ? el('input', { ...attrs, class: 'control', type: 'text', autocomplete: 'off', placeholder: spec.placeholder, maxlength: spec.maxLength })
-            : el('textarea', { ...attrs, class: 'control', rows: 4, placeholder: spec.placeholder, maxlength: spec.maxLength });
-          control.value = value ?? '';
-          read = () => {
-            const value = control.value;
-            if (!value.trim()) return required ? { error: 'Enter a value.' } : {};
-            if (spec.maxLength && value.length > spec.maxLength) return { error: `Use ${spec.maxLength} characters or fewer.` };
-            return { value };
-          };
-          break;
-        case 'number':
-          control = el('input', { ...attrs, class: 'control', type: 'number', inputmode: 'decimal', placeholder: spec.placeholder,
-            min: spec.min, max: spec.max, step: spec.step ?? 'any' });
-          control.value = value == null ? '' : String(value);
-          read = () => {
-            if (control.validity.badInput) return { error: 'Enter a number.' };
-            if (control.value === '') return required ? { error: 'Enter a number.' } : {};
-            if (control.validity.rangeUnderflow || control.validity.rangeOverflow) return { error: range(spec, 'number') };
-            if (control.validity.stepMismatch) return { error: spec.step === 1 ? 'Use a whole number.' : `Use steps of ${spec.step}.` };
-            return { value: Number(control.value) };
-          };
-          break;
-        case 'date':
-          control = el('input', { ...attrs, class: 'control', type: 'date', min: spec.min, max: spec.max });
-          control.value = value ?? '';
-          read = () => {
-            if (control.validity.badInput) return { error: 'Enter a complete date.' };
-            if (!control.value) return required ? { error: 'Choose a date.' } : {};
-            if (control.validity.rangeUnderflow || control.validity.rangeOverflow) return { error: range(spec, 'date') };
-            // The receipt shows the date as the field did, in the reader's own format.
-            const text = control.valueAsDate.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'UTC' });
-            return { value: control.value, text };
-          };
-          break;
-      }
-      return { control, read };
-    };
-
     switch (spec.type) {
       case 'text':
       case 'multiline':
       case 'number':
       case 'date': {
         if (!spec.multiple) {
-          ({ control, read } = entry(common, spec.default, spec.required));
+          ({ control, read } = entry(spec, common, spec.default, spec.required));
           break;
         }
         // Several values: a numbered row for each, as the arguments they become.
@@ -301,7 +411,7 @@
           item.remove.setAttribute('aria-label', `Remove value ${i + 1}`);
         });
         const add = (value, focus) => {
-          const item = entry({ 'aria-describedby': describedby }, value, false);
+          const item = entry(spec, { 'aria-describedby': describedby }, value, false);
           item.remove = el('button', { class: 'remove', type: 'button', onclick: () => {
             const at = entries.indexOf(item);
             if (entries.length === 1) item.control.value = '';
@@ -483,7 +593,14 @@
       unreadable: ['Unreadable', "The result can't be shown", `${upper(machine)} finished, but this page can't display what it sent.`],
     };
 
-    const fields = (definition.inputs ?? []).map(field);
+    // A group of inputs that go together shows as one field, where its first input is.
+    const specs = definition.inputs ?? [];
+    const fields = specs.flatMap((spec, i) => {
+      const group = (definition.pairs ?? []).find(names => names.includes(spec.name));
+      if (!group) return [field(spec, i)];
+      const members = specs.filter(other => group.includes(other.name));
+      return members[0] === spec ? [together(members, i)] : [];
+    });
     const fieldset = fields.length
       ? el('fieldset', { class: 'fields' }, el('legend', { class: 'sr', text: 'Task input' }), ...fields.map(item => item.node))
       : el('p', { class: 'none', text: 'This task needs no input.' });
@@ -574,7 +691,8 @@
       }
       for (const [item, entry] of read) item.lock(entry);
       // fromEntries defines plain properties, so a field named __proto__ stays data.
-      return Object.fromEntries(read.filter(([, entry]) => entry.value !== undefined).map(([item, entry]) => [item.name, entry.value]));
+      return Object.fromEntries(read.filter(([, entry]) => entry.value !== undefined)
+        .flatMap(([item, entry]) => item.names ? item.names.map((name, i) => [name, entry.value[i]]) : [[item.name, entry.value]]));
     }
 
     // Acceptance and execution are separate: the clock and the signal start only when
@@ -697,8 +815,9 @@
       say(`${heading}. ${detail ? `${detail} ` : ''}${body}`);
       if (code !== 'invalid' || error.fields === null || typeof error.fields !== 'object') return null;
       const flagged = fields.filter(item => {
-        const message = Object.hasOwn(error.fields, item.name) ? error.fields[item.name] : '';
-        if (typeof message !== 'string' || !message) return false;
+        const message = (item.names ?? [item.name]).map(name => Object.hasOwn(error.fields, name) ? error.fields[name] : '')
+          .find(text => typeof text === 'string' && text);
+        if (!message) return false;
         item.invalid(message);
         return true;
       });

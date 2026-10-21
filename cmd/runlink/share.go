@@ -87,7 +87,7 @@ func share(ctx context.Context, origin string, args []string, getenv func(string
 			a = &asker{ctx: ctx, keys: k, st: st, r: r}
 		}
 	}
-	t, from, err := taskFor(path, *edit, a)
+	t, from, err := taskFor(path, *edit, a, notesFile(getenv), func(err error) { fmt.Fprintln(stderr, "runlink:", err) })
 	if errors.Is(err, errCanceled) {
 		r.draw([]string{"", "  Canceled. Nothing was saved."}, nil, -1, 0)
 		return 130

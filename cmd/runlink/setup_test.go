@@ -16,6 +16,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -157,7 +158,7 @@ func recipient(t *testing.T, screen string) (*browser, string) {
 	return b, form(t, def)
 }
 
-func form(t *testing.T, def definition) string {
+func form(t *testing.T, def shown) string {
 	t.Helper()
 	data, err := json.Marshal(def)
 	if err != nil {
@@ -214,7 +215,7 @@ func TestGuidedFirstShare(t *testing.T) {
 		t.Fatalf("a new task file has mode %v; it must be private to the owner", info.Mode())
 	}
 	loaded, err := loadTask(script)
-	if err != nil || form(t, loaded.definition) != want || !slices.Equal(loaded.Command, []string{"./greet.sh", "{name}", "{tone}"}) ||
+	if err != nil || form(t, loaded.public()) != want || !slices.Equal(loaded.Command, []string{"./greet.sh", "{name}", "{tone}"}) ||
 		loaded.Timeout != 60 || !loaded.Progress {
 		t.Fatalf("stored task %+v: %v", loaded, err)
 	}
@@ -365,7 +366,7 @@ func TestGuidedSetupCancelEditAndErrors(t *testing.T) {
 	edited, err := loadTask(script)
 	if err != nil || edited.Title != "Echo it" || len(edited.Inputs) != 2 || edited.Inputs[0].Name != "words" ||
 		edited.Inputs[0].Help != "Echoed back" || !slices.Equal(edited.Command, []string{"./echo.sh", "{words}", "{pick}"}) || edited.Timeout != 5 ||
-		form(t, definition{Inputs: edited.Inputs[1:]}) != `{"title":"","inputs":[{"name":"pick","type":"choice","default":1,"options":[1,"1","a,b","b","warm ","a","a ",""]}]}` {
+		form(t, shown{definition: definition{Inputs: edited.Inputs[1:]}}) != `{"title":"","inputs":[{"name":"pick","type":"choice","default":1,"options":[1,"1","a,b","b","warm ","a","a ",""]}]}` {
 		t.Fatalf("edited task %+v: %v", edited, err)
 	}
 	if info, err := os.Stat(stored); err != nil {
@@ -814,7 +815,7 @@ func TestRetargetKeepsTheProgram(t *testing.T) {
 		{[]string{"./greet.sh", "{name}"}, "greet.sh", "plain.sh", "/bin/sh ./plain.sh {name}", true}, // not executable
 		{[]string{"python3", "-c", "print(1)"}, "gone", "hello.py", "python3 -c 'print(1)'", false},
 	} {
-		got, found := retarget(c.command, dir, c.other, c.script)
+		got, found := retarget(c.command, dir, dir, c.other, c.script)
 		if commandLine(got) != c.want || found != c.found {
 			t.Errorf("%q from %s: %s %v, want %s %v", c.command, c.other, commandLine(got), found, c.want, c.found)
 		}
@@ -833,7 +834,7 @@ func TestMatchesOfferOnlyFilesThatLoad(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if found := matches(filepath.Join(dir, "new.sh"), strings.Repeat("0", 64)); len(found) != 1 || found[0].script != "gone.sh" {
+	if found := matches(filepath.Join(dir, "new.sh"), strings.Repeat("0", 64), nil); len(found) != 1 || filepath.Base(found[0].script) != "gone.sh" {
 		t.Fatalf("offered %+v", found)
 	}
 }
@@ -877,4 +878,215 @@ func TestEditKeepsSeparators(t *testing.T) {
 	}
 	c.press(t, "\x03")
 	exited(t, done, 0)
+}
+
+// The setup asks for a count's flag and how it is written, and for an argument
+// written around an input's value, with an option before it; inputs in one
+// such argument go together as rows, which the recipient fills in.
+func TestSetupCountsAndPairs(t *testing.T) {
+	stack := startStack(t)
+	stubClipboard(t)
+	script := writeScript(t, "tool.sh", `for a; do printf '[%s]' "$a"; done`)
+	env := terminalEnv(stack.Frontend)
+
+	c := newConsole(t)
+	done := c.share(t.Context(), env, script)
+	c.await(t, "tool.sh has no task file yet")
+	c.press(t, "\r\r\r"+"y"+"Verbosity\r\rn\r\rn"+"c\r")
+	c.await(t, "Flag        -v")
+	c.press(t, "\r")
+	c.await(t, "stacked     -vvv")
+	c.press(t, "s\r\r")
+	c.await(t, "verbosity    number, [-vv]... · Verbosity")
+	c.press(t, "y"+"Host\r\r\ryn"+"p\r"+"{host}:{port}\r"+"-p\r\r")
+	c.await(t, "host         text, several, [-p {host}:{port}]... · Host")
+	c.press(t, "y"+"Port\r\rn\ryn")
+	c.await(t, "inside an argument you write")
+	c.press(t, "\r\r\r\r")
+	c.await(t, "port         number, several, [-p {host}:{port}]..., in rows with host · Port")
+	c.press(t, "n"+"\r"+"\r\r\r\r")
+	c.await(t, "Runs  ./tool.sh [-vv]... [-p {host}:{port}]...")
+	c.await(t, "Host · Port")
+	c.press(t, "\r")
+	c.await(t, "Sharing")
+	stored, err := os.ReadFile(storedPath(script))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"command": ["./tool.sh", "{verbosity}", "{host}:{port}"],`,
+		`{ "name": "verbosity", "type": "number", "label": "Verbosity", "max": 3, "flag": "-v", "count": true, "stack": true },`,
+		`{ "name": "host", "type": "text", "label": "Host", "multiple": true, "flag": "-p" },`,
+		`{ "name": "port", "type": "number", "label": "Port", "multiple": true }`,
+	} {
+		if !strings.Contains(string(stored), want) {
+			t.Fatalf("stored file lacks %s:\n%s", want, stored)
+		}
+	}
+	b, got := recipient(t, c.screen())
+	if !strings.Contains(got, `"pairs":[["host","port"]]`) || strings.Contains(got, `"count"`) {
+		t.Fatalf("recipients got %s", got)
+	}
+	if _, output, failure := b.run(t, map[string]any{"verbosity": 2.0, "host": []any{"a", "b"}, "port": []any{80.0, 443.0}}); failure != nil ||
+		output != "[-vv][-p][a:80][-p][b:443]" {
+		t.Fatalf("output %q, failure %+v", output, failure)
+	}
+	c.press(t, "\x03")
+	exited(t, done, 0)
+
+	// Title, description, owner; verbosity, host, port; no more inputs; the
+	// variables; output, label, timeout, progress; share.
+	c = newConsole(t)
+	done = c.share(t.Context(), env, "--edit", script)
+	c.await(t, "Editing")
+	c.press(t, strings.Repeat("\r", 3+10+10+10+1+1+4+1))
+	c.await(t, "Sharing")
+	if again, err := os.ReadFile(storedPath(script)); err != nil || string(again) != string(stored) {
+		t.Fatalf("--edit changed the file to:\n%s %v", again, err)
+	}
+	c.press(t, "\x03")
+	exited(t, done, 0)
+}
+
+// A script moved to another folder without its task file finds it by its
+// contents, which share notes at each share, and asks before using it; a copy
+// elsewhere is offered the moved one's file the same way. Unreadable notes are
+// reported, and sharing goes on.
+func TestMovedScriptFindsItsFile(t *testing.T) {
+	stack := startStack(t)
+	stubClipboard(t)
+	config := t.TempDir()
+	env := terminalEnv(stack.Frontend, "XDG_CONFIG_HOME", config, "HOME", config)
+	notes := notesFile(env)
+	greet := writeScript(t, "greet.sh", `echo "Hi $1"`)
+	sum, err := digest(greet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file := `{"title": "Greet", "command": ["./greet.sh", "{name}"], "inputs": [{"name": "name", "type": "text", "required": true}],
+		"output": {"kind": "text"}}`
+	if err := os.WriteFile(storedPath(greet), []byte(file), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := newConsole(t)
+	wide := func(c *console) { // for the paths the choices show
+		if err := unix.IoctlSetWinsize(int(c.tty.Fd()), unix.TIOCSWINSZ, &unix.Winsize{Row: 50, Col: 240}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	done := c.share(t.Context(), env, greet)
+	c.await(t, "Sharing")
+	c.press(t, "\x03")
+	exited(t, done, 0)
+	if known, err := recall(notes); err != nil || known[storedPath(greet)] != sum {
+		t.Fatalf("notes %v %v", known, err)
+	}
+
+	moved := filepath.Join(t.TempDir(), "greet.sh")
+	if err := os.Rename(greet, moved); err != nil {
+		t.Fatal(err)
+	}
+	c = newConsole(t)
+	wide(c)
+	done = c.share(t.Context(), env, moved)
+	c.await(t, "greet.sh    its answers; same contents, perhaps moved here from "+filepath.Dir(greet))
+	c.await(t, "new         answers of its own, from the start")
+	c.press(t, "\r")
+	c.await(t, "Starting from "+storedPath(greet)+"; the answers go to "+storedPath(moved))
+	c.press(t, strings.Repeat("\r", 3+7+1+1+4))
+	c.await(t, "Runs  ./greet.sh {name}")
+	c.press(t, "\r")
+	c.await(t, "Sharing")
+	b, _ := recipient(t, c.screen())
+	if _, output, failure := b.run(t, map[string]any{"name": "Ada"}); failure != nil || output != "Hi Ada\n" {
+		t.Fatalf("output %q, failure %+v", output, failure)
+	}
+	c.press(t, "\x03")
+	exited(t, done, 0)
+
+	// The moved script's file is now its own: a copy in a third folder is
+	// offered that one, and no longer the one it came from.
+	script := func(dir, name string) string {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte("#!/bin/sh\necho \"Hi $1\""), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	c = newConsole(t)
+	wide(c)
+	done = c.share(t.Context(), env, script(t.TempDir(), "tool.sh"))
+	c.await(t, "greet.sh    its answers; the same contents, in "+filepath.Dir(moved))
+	c.await(t, "new         answers of its own")
+	if strings.Contains(c.screen(), filepath.Dir(greet)) {
+		t.Fatalf("offered the file the moved script took:\n%s", c.screen())
+	}
+	c.press(t, "\x03")
+	exited(t, done, 130)
+	// Nor is it offered beside where it was.
+	c = newConsole(t)
+	wide(c)
+	done = c.share(t.Context(), env, script(filepath.Dir(greet), "again.sh"))
+	c.await(t, "greet.sh    its answers; the same contents, in "+filepath.Dir(moved))
+	c.await(t, "new         answers of its own")
+	if strings.Contains(c.screen(), "perhaps renamed") {
+		t.Fatalf("offered the file the moved script took:\n%s", c.screen())
+	}
+	c.press(t, "\x03")
+	exited(t, done, 130)
+
+	if err := os.WriteFile(notes, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c = newConsole(t)
+	done = c.share(t.Context(), env, moved)
+	c.await(t, "Sharing")
+	c.press(t, "\x03")
+	exited(t, done, 0)
+	if !strings.Contains(c.errs.String(), notes+": unexpected end of JSON input; fix or delete it so moved scripts find their task files") {
+		t.Fatalf("stderr %q", c.errs.String())
+	}
+}
+
+// Moving an argument written around a value keeps the others where they are.
+func TestPositionMovesAnArgument(t *testing.T) {
+	tk := &task{Command: []string{"./x", "{a}", "{b}.txt", "{c}"}}
+	a := &asker{ctx: t.Context(), keys: readKeys(strings.NewReader("3\r")), r: &region{w: io.Discard, width: func() int { return 80 }}}
+	if err := a.position(tk, "b", func(name string) bool { return name != "b" }); err != nil ||
+		!slices.Equal(tk.Command, []string{"./x", "{a}", "{c}", "{b}.txt"}) {
+		t.Fatalf("%q %v", tk.Command, err)
+	}
+}
+
+// Notes stay whole however many shares change them at once, and notes that
+// say null are none.
+func TestNotesTakeEveryShare(t *testing.T) {
+	dir := t.TempDir()
+	notes := filepath.Join(dir, "config", "runlink", "scripts.json")
+	var shares sync.WaitGroup
+	for i := range 20 {
+		stored := filepath.Join(dir, fmt.Sprintf("s%d.sh.runlink.json", i))
+		if err := os.WriteFile(stored, []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		shares.Go(func() {
+			if err := remember(notes, stored, strings.Repeat("a", 64), ""); err != nil {
+				t.Error(err)
+			}
+		})
+	}
+	shares.Wait()
+	if known, err := recall(notes); err != nil || len(known) != 20 {
+		t.Fatalf("%d notes %v", len(known), err)
+	}
+	if err := os.WriteFile(notes, []byte("null"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stored := filepath.Join(dir, "s0.sh.runlink.json")
+	if err := remember(notes, stored, strings.Repeat("b", 64), ""); err != nil {
+		t.Fatal(err)
+	}
+	if known, err := recall(notes); err != nil || len(known) != 1 || known[stored] != strings.Repeat("b", 64) {
+		t.Fatalf("%v %v", known, err)
+	}
 }

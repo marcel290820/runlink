@@ -1,4 +1,4 @@
-const approvedGUI = Object.freeze(["e1a38e5c24943fd099a343fef612b770fbecf1bd41e4dc63b3df1942ac8f2ee2"]);
+const approvedGUI = Object.freeze(["169e4b13f0b673266bb8c9c7e35e1874571e6d32018af845b243db0f4fcf87e7"]);
 
 // The gate shows where the link stands until the verified GUI replaces it.
 const gate = document.getElementById('gate');

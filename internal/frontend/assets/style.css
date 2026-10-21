@@ -173,8 +173,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .control::placeholder { color: var(--muted); opacity: .85; font-weight: 420; }
 textarea.control { min-height: 128px; resize: vertical; }
 select.control { padding-right: 48px; appearance: none; cursor: pointer; }
-.slot:has(> select.control)::after { content: ""; position: absolute; top: 50%; right: 21px; width: 8px; height: 8px; border: solid var(--ink);
+.slot:has(> select.control)::after, .cell:has(> select.control)::after { content: ""; position: absolute; top: 50%; right: 21px; width: 8px; height: 8px; border: solid var(--ink);
   border-width: 0 1.8px 1.8px 0; transform: translateY(-70%) rotate(45deg); pointer-events: none; }
+.cell:has(> select.control)::after { right: 15px; }
 input[type="number"].control { appearance: textfield; }
 input[type="number"].control::-webkit-inner-spin-button,
 input[type="number"].control::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
@@ -332,12 +333,22 @@ input[type="date"].control::-webkit-calendar-picker-indicator { cursor: pointer;
   width: 46px; height: 54px; font-family: "Martian Mono", ui-monospace, monospace; font-size: 11.5px; font-weight: 500; color: var(--muted);
   pointer-events: none; }
 .row > .control { padding-left: 46px; padding-right: 52px; }
-.row:has(> .control:focus-visible)::before { color: var(--ink); }
+.row:has(> .control:focus-visible)::before, .cells:has(.control:focus-visible)::before { color: var(--ink); }
 .remove { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 38px; height: 38px; border: 0; border-radius: 10px;
   background: none; cursor: pointer; color: var(--muted); }
 .remove:hover { background: var(--tint); color: var(--ink); }
 .row:only-child .remove { display: none; }
 .add { margin-top: 10px; }
+/* Values that go together: the row's number, then a column per input under its label. */
+.heads, .cells { display: grid; grid-template-columns: 24px repeat(var(--cols), minmax(0, 1fr)); gap: 8px; padding-right: 44px; }
+.heads::before { content: ""; }
+.heads { margin-bottom: 9px; font-size: 14.5px; font-weight: 620; }
+.heads > span { min-width: 0; overflow-wrap: anywhere; }
+.cells::before { position: static; width: auto; }
+.cell { position: relative; display: grid; min-width: 0; }
+.cells .control { padding-left: 14px; padding-right: 14px; }
+.cells select.control { padding-right: 34px; }
+.cells .remove { right: 2px; }
 
 /* Several choices: chips in a well; a picked one inks in, its box filled with foil. */
 .checks { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 16px; background: var(--well);
@@ -425,6 +436,8 @@ input[type="date"].control::-webkit-calendar-picker-indicator { cursor: pointer;
 .bench.sent-out .toggle .shown { justify-content: center; padding: 0; border-radius: 99px; }
 .bench.sent-out .slot:has(textarea) .shown { align-items: flex-start; padding-top: 15px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .bench.sent-out .slot:has(.rows, .checks, .picked:not([hidden])) .shown { align-items: flex-start; padding-top: 15px; white-space: normal; overflow-wrap: anywhere; }
+/* Values that go together read back a row per line, from the first column. */
+.bench.sent-out .slot:has(.cells:not([hidden])) .shown { padding-left: 46px; white-space: pre-line; }
 
 /* The machine: the owner's computer, a sealed chamber of dark glass. Its glass is
    etched with two ring fields whose moire drifts, its rim is foil that glows while

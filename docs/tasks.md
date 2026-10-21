@@ -46,8 +46,10 @@ without inputs that shows stdout as text. The questions follow the task file
 below: title, description, owner, then inputs one at a time (label, name, type,
 options for a choice, whether it takes several values, whether it is required,
 and how the script takes it, as [Input](#input) lists: where a positional
-argument goes among the others, an option's spelling, what a boolean passes when
-on and when off, how several values are joined), then variables fixed for every
+argument goes among the others, an option's spelling, a counted flag and how
+it is written, an argument you write around the value with an option before
+it, what a boolean passes when on and when off, how several values are
+joined), then variables fixed for every
 run, the output's kind and label, the timeout, and progress. Lists take the
 arrow keys or an option's first letter; a wrong answer is explained under the
 question until you fix it. Before anything is saved, `share` shows the form as
@@ -76,17 +78,23 @@ terminal, a script without a saved file shares without input, and nothing is
 asked or written. Name a task file directly, as in `runlink share backup.json`,
 and it is shared as it is, without questions.
 
-A script without a file of its own may still have one under another name. The
-setup records the script's SHA-256 in `sha256`, so `share` finds, beside the
-script, a file saved for a script with the same contents, as for a copy, or for
-a script that is gone, as after a rename. It never uses one without asking:
-"Start from" lists them with `new` for answers of its own, since a copy may want
-a different form. Picking one goes through the questions with its answers as
-suggestions, runs the new script in the other's place in its command, with
-its interpreter when it is not executable, and saves a file of the script's
-own; the other file stays as it was. A command that names no script there is
-shown for you to check, and `c` changes it. A script moved to another folder without its file
-starts afresh.
+A script without a file of its own may still have one under another name or in
+another folder. The setup records the script's SHA-256 in `sha256`, and each
+share notes the script's file with the script's SHA-256 at that share in
+`runlink/scripts.json` in your config directory (`~/.config` on Linux,
+`~/Library/Application Support` on macOS). So `share` finds a file saved for a
+script with the same contents anywhere, whether that script is gone, as after
+a move or a rename, or still there, as for a copy, and, beside the script, a
+file for one that is gone. It never uses one without asking: "Start from"
+lists them, the likeliest first, with `new` for answers of its own, since a
+copy may want a different form. Picking one goes through the questions with
+its answers as suggestions, runs the new script in the other's place in its
+command, with its interpreter when it is not executable, and saves a file of
+the script's own; the other file stays as it was, and once a moved script
+takes it, it is not offered again. A command that names no script there is
+shown for you to check, and `c` changes it. A script edited after it moved and
+before its next share no longer matches, and starts afresh. A notes file that
+cannot be read is reported each time, and sharing goes on.
 
 ## Task file
 
@@ -116,7 +124,7 @@ A task file is one JSON object, at most 64 KiB, with only these fields:
 | `title`, `description`, `owner` | What recipients see; `owner` makes the page say "Dana's machine" |
 | `command` | The program and its arguments, run without a shell from the task file's directory; a relative program path starts there too. Only arguments take input; the program is fixed |
 | `env` | Variables set for every run, as `{"LANG": "C"}`, over the ones your shell gives; recipients never see them |
-| `inputs` | Form fields, as [gui.js](../internal/frontend/assets/gui.js) documents: `text`, `multiline`, `number`, `date`, `boolean`, `choice`, `file`, and `multiple` for several values; `flag`, `env`, `stdin`, `on`, `off`, `join` and `unsafe` say how a value reaches the script, as [Input](#input) explains, and recipients never see them |
+| `inputs` | Form fields, as [gui.js](../internal/frontend/assets/gui.js) documents: `text`, `multiline`, `number`, `date`, `boolean`, `choice`, `file`, and `multiple` for several values; `flag`, `env`, `stdin`, `on`, `off`, `join`, `count`, `stack` and `unsafe` say how a value reaches the script, as [Input](#input) explains, and recipients never see them |
 | `output` | `kind` `text` or `json` shows stdout; `file` offers stdout as a download named `name`; without `output`, recipients see only that the run finished |
 | `timeout` | Seconds from accepting a run, including receiving its files, until the run and every process it started are killed; default 60, as long as you need |
 | `progress` | Show each stderr line to recipients while the task runs; off by default. A recipient whose connection cannot keep up misses lines instead of slowing the task |
@@ -143,8 +151,11 @@ Each value reaches the script the way the script takes it:
 | A flag, and another for off | a boolean with `"flag": "--color", "off": "--no-color"` | `--color` or `--no-color` |
 | Other texts for a boolean | `"on": "yes", "off": "no"`, as an argument, variable or stdin line | `yes` or `no`; an empty text passes nothing |
 | Part of an argument | `"out-{day}.csv"` in `command` | `out-2026-10-21.csv` |
+| An option before part of an argument | `"{name}.txt"` in `command`, and `"flag": "-o"` | `-o report.txt` |
+| A flag counted, as `-vvv` | a number with `"flag": "-v", "count": true, "max": 3` | `-v -v -v` for 3; with `"stack": true`, `-vvv` |
 | Several values, as `"$@"` | `"multiple": true` | `a b`, each its own argument; with a flag, `--tag a --tag b` |
 | Several values as one | `"multiple": true, "join": ","` | `a,b` |
+| Values in sets, as `-p 8080:80` | `"{host}:{port}"` in `command`, both `"multiple": true`, and `"flag": "-p"` on one | `-p a:80 -p b:443` |
 | An environment variable | `"env": "NAME"` | `NAME=Ada` for the run |
 | A fixed variable | `"env": {"MODE": "prod"}` beside `command` | `MODE=prod` for every run |
 | A line of stdin, as a prompt reads it | `"stdin": true` | `Ada` and a newline |
@@ -162,8 +173,18 @@ Each value reaches the script the way the script takes it:
   unset, even when your shell sets it, and a stdin line is empty.
 - Several values arrive as a list in the form. An argument holding the input
   repeats once per value, flag included, unless `join` makes the values one
-  text; an argument can hold only one such input. A variable gets them a line
-  each, stdin a line each, and the JSON a list. `required` asks for at least one.
+  text. An argument holding two or more such inputs repeats once per row,
+  taking each one's value at that row: the page shows them as one field of
+  rows, and a row filled in halfway is refused. Files cannot go in rows. A
+  variable gets the values a line each, stdin a line each, and the JSON a list.
+  `required` asks for at least one.
+- A `flag` goes before every argument that holds its input, or joined to it
+  when it ends in `=`, and is left out with the argument. One argument can take
+  one input's flag. A boolean's flag and a count's are their own texts, so
+  they take `{name}` as a whole argument.
+- A count passes its flag once per one, from none, up to `max`, which it needs
+  so that a recipient cannot build a huge command; its `min` is 0 and its
+  `step` 1 unless set, and `stack` needs a one-letter flag.
 - A text value that starts an argument, alone, after a separate flag, or before
   more text as in `{name}.txt`, may not start with `-`, so it cannot become an
   option. A flag ending in `=`, or a `--` argument before it in `command`,
@@ -182,10 +203,8 @@ Each value reaches the script the way the script takes it:
   `"unsafe": true`; the setup asks before adding it. A fixed variable is your
   own text and can be any name.
 
-Not covered yet: a flag repeated to count, as `-vvv`; two inputs of several
-values in one argument, as pairs; a script that needs a terminal for its
-input, rather than stdin; and a script moved to another folder without its task
-file, which starts afresh.
+Not covered yet: a script that needs a terminal for its input, rather than
+stdin.
 
 A file input's value is the path of the recipient's file, stored under its own
 name in a new private directory and deleted with it when the run ends; several

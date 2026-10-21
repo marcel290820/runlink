@@ -4,7 +4,8 @@
 
 Accepted. Recorded 2026-10-21. Supersedes the refused variable names and the
 owner-side limits of [ADR 0010](0010-input-passing.md), and the guided setup's
-file naming.
+file naming. [ADR 0012](0012-counts-rows-and-moved-scripts.md) closes counted
+flags, two lists in one argument, and moved scripts.
 
 ## Context
 

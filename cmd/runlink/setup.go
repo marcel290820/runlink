@@ -11,11 +11,14 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"golang.org/x/sys/unix"
 )
 
 // storedPath is where the guided setup keeps a script's task file: beside it,
@@ -28,8 +31,9 @@ const storedSuffix = ".runlink.json"
 // Without one, an owner at a terminal answers the setup questions first, as
 // with --edit, starting from another script's file if the owner says it fits;
 // otherwise the script runs without input. from is the stored file when it
-// loaded without questions.
-func taskFor(path string, edit bool, a *asker) (t *task, from string, err error) {
+// loaded without questions. Each script's file is noted in notes, a file of
+// notes or "" for none; warn hears what goes wrong with them.
+func taskFor(path string, edit bool, a *asker, notes string, warn func(error)) (t *task, from string, err error) {
 	if filepath.Ext(path) == ".json" {
 		if edit {
 			return nil, "", fmt.Errorf("--edit sets up a script's task file; edit %s by hand", path)
@@ -42,7 +46,15 @@ func taskFor(path string, edit bool, a *asker) (t *task, from string, err error)
 	exists := !errors.Is(err, fs.ErrNotExist)
 	switch {
 	case exists && !edit:
-		t, err = loadTask(path)
+		if t, err = loadTask(path); err == nil {
+			// The script's contents now, so it finds its file after a move.
+			abs, _ := filepath.Abs(path) // loadTask made it
+			if sum, err := digest(abs); err != nil {
+				warn(err)
+			} else if err := remember(notes, storedPath(abs), sum, ""); err != nil {
+				warn(err)
+			}
+		}
 		return t, stored, err
 	case a == nil && edit:
 		return nil, "", errors.New("--edit asks questions, so it needs a terminal")
@@ -55,16 +67,19 @@ func taskFor(path string, edit bool, a *asker) (t *task, from string, err error)
 		return nil, "", err
 	}
 	abs, _ := filepath.Abs(path) // loadTask made it
-	data, err := os.ReadFile(abs)
+	sum, err := digest(abs)
 	if err != nil {
 		return nil, "", err
 	}
-	sum := fmt.Sprintf("%x", sha256.Sum256(data))
 	draft := &task{definition: definition{Title: suggestedTitle(path), Output: &output{Kind: "text"}}, Timeout: 60,
 		Command: append(interpreter(abs), "./"+filepath.Base(path))}
 	start := stored
 	if !exists {
-		if start, err = a.adopt(path, matches(abs, sum)); err != nil {
+		known, err := recall(notes)
+		if err != nil {
+			warn(err)
+		}
+		if start, err = a.adopt(path, matches(abs, sum, known)); err != nil {
 			return nil, "", err
 		}
 	}
@@ -79,13 +94,15 @@ func taskFor(path string, edit bool, a *asker) (t *task, from string, err error)
 		}
 		if start != stored {
 			var found bool
-			if draft.Command, found = retarget(draft.Command, t.dir, strings.TrimSuffix(filepath.Base(start), storedSuffix), filepath.Base(path)); !found {
+			other := strings.TrimSuffix(filepath.Base(start), storedSuffix)
+			if draft.Command, found = retarget(draft.Command, filepath.Dir(start), t.dir, other, filepath.Base(path)); !found {
 				a.show("", "  "+escape(filepath.Base(start))+"'s command names no script beside it; check what it runs below, and press c to change it.")
 			}
 		}
 	}
 	draft.dir, draft.SHA256 = t.dir, sum
-	if data, err = a.setup(draft, path, stored, start); err != nil {
+	data, err := a.setup(draft, path, stored, start)
+	if err != nil {
 		return nil, "", err
 	}
 	if err := save(stored, data, exists); err != nil {
@@ -95,43 +112,168 @@ func taskFor(path string, edit bool, a *asker) (t *task, from string, err error)
 		return nil, "", fmt.Errorf("could not save %s: %w", stored, err)
 	}
 	a.show("  " + a.st.sgr(green, a.st.sym("✓", "+")) + " Saved " + escape(stored))
+	// A file whose script is gone, now this one's, is no other script's.
+	adopted := ""
+	if _, err := os.Stat(strings.TrimSuffix(start, storedSuffix)); start != stored && errors.Is(err, fs.ErrNotExist) {
+		adopted = start
+	}
+	if err := remember(notes, storedPath(abs), sum, adopted); err != nil {
+		warn(err)
+	}
 	t, err = loadTask(path)
 	return t, "", err
 }
 
-// A match is another script's task file that may fit a script without one.
-type match struct{ file, script, why string }
-
-// matches are the task files beside a script without one of its own that may
-// still be its: set up for a script with the same contents, as a copy, or for
-// one that is gone, as after a rename. Same contents come first.
-func matches(abs, sum string) []match {
-	dir := filepath.Dir(abs)
-	entries, err := os.ReadDir(dir)
+// digest is the SHA-256 of a file's contents, in hex.
+func digest(path string) (string, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", sha256.Sum256(data)), nil
+}
+
+// notesFile is where share notes each script's task file, with the script's
+// SHA-256 at its last share, in the config directory os.UserConfigDir names;
+// "" when there is none.
+func notesFile(getenv func(string) string) string {
+	dir, home := getenv("XDG_CONFIG_HOME"), getenv("HOME")
+	switch {
+	case runtime.GOOS == "darwin" && home != "":
+		dir = filepath.Join(home, "Library", "Application Support")
+	case runtime.GOOS == "darwin":
+		dir = ""
+	case dir == "" && home != "":
+		dir = filepath.Join(home, ".config")
+	}
+	if !filepath.IsAbs(dir) {
+		return ""
+	}
+	return filepath.Join(dir, "runlink", "scripts.json")
+}
+
+// recall reads the notes: each task file's path, and its script's SHA-256,
+// or "" for a file that a moved script took, which no other script is offered.
+func recall(notes string) (map[string]string, error) {
+	known := map[string]string{}
+	if notes == "" {
+		return known, nil
+	}
+	data, err := os.ReadFile(notes)
+	if errors.Is(err, fs.ErrNotExist) {
+		return known, nil
+	}
+	if err == nil {
+		err = json.Unmarshal(data, &known)
+	}
+	if err != nil {
+		return map[string]string{}, fmt.Errorf("%s: %w; fix or delete it so moved scripts find their task files", notes, err)
+	}
+	if known == nil {
+		known = map[string]string{} // the notes said null
+	}
+	return known, nil
+}
+
+// remember notes stored as the task file of a script with SHA-256 sum, marks
+// adopted, if not "", as taken, and forgets the files that are gone. Shares
+// change the notes one at a time, holding a lock beside them.
+func remember(notes, stored, sum, adopted string) error {
+	if notes == "" {
 		return nil
 	}
-	var found []match
+	failed := func(err error) error {
+		return fmt.Errorf("could not note %s for when the script moves: %w", stored, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(notes), 0o700); err != nil {
+		return failed(err)
+	}
+	lock, err := os.OpenFile(notes+".lock", os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return failed(err)
+	}
+	defer lock.Close() // and with it the lock
+	if err := unix.Flock(int(lock.Fd()), unix.LOCK_EX); err != nil {
+		return failed(err)
+	}
+	known, err := recall(notes)
+	if err != nil {
+		return err
+	}
+	changed := known[stored] != sum
+	if was, ok := known[adopted]; adopted != "" && (!ok || was != "") {
+		known[adopted], changed = "", true
+	}
+	for file := range known {
+		if _, err := os.Stat(file); errors.Is(err, fs.ErrNotExist) {
+			delete(known, file)
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	known[stored] = sum
+	data, err := json.MarshalIndent(known, "", "  ")
+	if err == nil {
+		err = save(notes, append(data, '\n'), true)
+	}
+	if err != nil {
+		return failed(err)
+	}
+	return nil
+}
+
+// A match is another script's task file that may fit a script without one:
+// the file, the script it was set up for, and why it may fit.
+type match struct{ file, script, why string }
+
+// matches are the task files that may still be a script's without one of its
+// own: set up for a script with the same contents, wherever known notes them,
+// whether that one is gone, as after a move or a rename, or still there, as
+// for a copy; or beside it, for a script that is gone. The likeliest come
+// first, and those beside it before others.
+func matches(abs, sum string, known map[string]string) []match {
+	dir := filepath.Dir(abs)
+	files := map[string]bool{}
+	entries, _ := os.ReadDir(dir) // a folder that cannot be listed has none to offer
 	for _, entry := range entries {
-		script, ok := strings.CutSuffix(entry.Name(), storedSuffix)
-		if !ok || script == "" || entry.IsDir() {
-			continue
+		if name, ok := strings.CutSuffix(entry.Name(), storedSuffix); ok && name != "" && !entry.IsDir() {
+			files[filepath.Join(dir, entry.Name())] = true
 		}
+	}
+	for file, noted := range known {
+		files[file] = files[file] || noted == sum
+	}
+	var found []match
+	for _, file := range slices.Sorted(maps.Keys(files)) {
 		// Only a file that loads is offered.
-		file, saved := filepath.Join(dir, entry.Name()), &task{dir: dir}
+		saved := &task{dir: filepath.Dir(file)}
 		data, err := os.ReadFile(file)
-		if err != nil || saved.parse(data) != nil {
+		noted, ok := known[file]
+		if !files[file] || ok && noted == "" || file == storedPath(abs) || err != nil || saved.parse(data) != nil {
 			continue
 		}
-		_, err = os.Stat(filepath.Join(dir, script))
+		script := strings.TrimSuffix(file, storedSuffix)
+		_, err = os.Stat(script)
+		gone, same := errors.Is(err, fs.ErrNotExist), saved.SHA256 == sum || known[file] == sum
 		switch {
-		case saved.SHA256 == sum:
-			found = append(found, match{file, script, "same contents"})
-		case errors.Is(err, fs.ErrNotExist):
+		case same && gone:
+			found = append(found, match{file, script, "moved"})
+		case same:
+			found = append(found, match{file, script, "copy"})
+		case gone && filepath.Dir(file) == dir:
 			found = append(found, match{file, script, "gone"})
 		}
 	}
-	slices.SortStableFunc(found, func(a, b match) int { return strings.Compare(b.why, a.why) })
+	rank := map[string]int{"moved": 0, "copy": 1, "gone": 2}
+	away := func(m match) int {
+		if filepath.Dir(m.file) != dir {
+			return 1
+		}
+		return 0
+	}
+	slices.SortStableFunc(found, func(a, b match) int { return cmp.Or(rank[a.why]-rank[b.why], away(a)-away(b)) })
 	return found
 }
 
@@ -141,15 +283,20 @@ func (a *asker) adopt(script string, found []match) (string, error) {
 	if len(found) == 0 {
 		return "", nil
 	}
+	abs, _ := filepath.Abs(script) // taskFor's loadTask made it
 	name := escape(filepath.Base(script))
-	a.show("", "  "+name+" has no task file yet, but one beside it was set up for a script that may be this one.", "")
+	a.show("", "  "+name+" has no task file yet, but one was set up for a script that may be this one.", "")
 	var list []option
 	for _, m := range found {
-		about := "its answers; it has the same contents as " + name
-		if m.why == "gone" {
-			about = "its answers; " + escape(m.script) + " is gone, perhaps renamed"
+		shown, there := escape(filepath.Base(m.script)), escape(tilde(filepath.Dir(m.script)))
+		about := map[string]string{"copy": "its answers; it has the same contents as " + name,
+			"moved": "its answers; it had the same contents and is gone, perhaps renamed",
+			"gone":  "its answers; " + shown + " is gone, perhaps renamed"}[m.why]
+		if filepath.Dir(m.script) != filepath.Dir(abs) {
+			about = map[string]string{"copy": "its answers; the same contents, in " + there,
+				"moved": "its answers; same contents, perhaps moved here from " + there}[m.why]
 		}
-		list = append(list, option{escape(m.script), about})
+		list = append(list, option{shown, about})
 	}
 	at, err := a.choose("Start from", append(list, option{"new", "answers of its own, from the start"}), 0)
 	if err != nil || at == len(found) {
@@ -158,20 +305,30 @@ func (a *asker) adopt(script string, found []match) (string, error) {
 	return found[at].file, nil
 }
 
-// retarget points a command taken from another script's task file at script
-// in dir. The argument naming the other script, bare or as a path and, as
-// older files are named, perhaps without its extension, becomes script; or
-// else the first path to a file in dir, as a bare word such as python3 names
+// tilde shortens a path in the home directory to start with ~.
+func tilde(path string) string {
+	if home, err := os.UserHomeDir(); err == nil {
+		if rest, ok := strings.CutPrefix(path, home+string(filepath.Separator)); ok {
+			return "~" + string(filepath.Separator) + rest
+		}
+	}
+	return path
+}
+
+// retarget points a command taken from another script's task file in from at
+// script in dir. The argument naming the other script, bare or as a path and,
+// as older files are named, perhaps without its extension, becomes script; or
+// else the first path to a file in from, as a bare word such as python3 names
 // a program. When that argument is the program and script is not executable,
 // script's interpreter runs it. found is false when no argument fits.
-func retarget(command []string, dir, other, script string) (retargeted []string, found bool) {
+func retarget(command []string, from, dir, other, script string) (retargeted []string, found bool) {
 	command = slices.Clone(command)
 	in := func(arg string) bool {
 		path := arg
 		if !filepath.IsAbs(path) {
-			path = filepath.Join(dir, path)
+			path = filepath.Join(from, path)
 		}
-		return !placeholder.MatchString(arg) && filepath.Dir(path) == dir
+		return !placeholder.MatchString(arg) && filepath.Dir(path) == from
 	}
 	at := slices.IndexFunc(command, func(arg string) bool {
 		name := filepath.Base(arg)
@@ -423,10 +580,14 @@ func (a *asker) variables(t *task) error {
 func how(t *task, in input) string {
 	on, off := switchArgs(in)
 	switch {
+	case in.Count:
+		return "count"
 	case in.Type == "boolean" && in.Flag != "":
 		return "flag"
-	case in.Flag != "":
+	case in.Flag != "" && lone(t.Command, in.Name) > 0:
 		return "option"
+	case in.Flag != "":
+		return "part"
 	case in.Env != "":
 		return "variable"
 	case in.Stdin:
@@ -435,7 +596,7 @@ func how(t *task, in input) string {
 		return "flag"
 	case lone(t.Command, in.Name) > 0:
 		return "argument"
-	case slices.ContainsFunc(t.Command[1:], func(arg string) bool { return holds(arg, in.Name) }):
+	case placed(t.Command, in.Name) > 0:
 		return "part"
 	}
 	return "json"
@@ -457,10 +618,11 @@ func passings(in input, others []input) []option {
 	case in.Multiple:
 		list[0].about = "positional arguments, one per value"
 	}
-	if in.how == "part" {
-		list = append(list, option{"part", "part of an argument, as the command has it"})
+	if in.Type == "number" && !in.Multiple {
+		list = append(list, option{"count", countFlag(in) + " once per one, as in -v -v -v"})
 	}
-	list = append(list, option{"variable", "an environment variable, " + env + "=VALUE"})
+	list = append(list, option{"part", "inside an argument you write, as in out-{" + in.Name + "}.csv or {a}:{b}"},
+		option{"variable", "an environment variable, " + env + "=VALUE"})
 	stdin := slices.ContainsFunc(others, func(o input) bool { return o.how == "stdin" })
 	onlyJSON := slices.ContainsFunc(others, func(o input) bool { return o.how == "json" })
 	switch {
@@ -497,25 +659,31 @@ func (a *asker) pass(t *task, in input, others, later []input) (input, error) {
 		t.Command = unplace(t.Command, in.Name)
 	}
 	in.how = list[at].name
+	// A positional argument takes an input's value without a flag before it.
 	arguments := func(name string) bool {
-		i := slices.IndexFunc(others, func(o input) bool { return o.Name == name })
-		if j := slices.IndexFunc(later, func(o input) bool { return o.Name == name }); i < 0 && j >= 0 {
-			return later[j].how == "argument"
+		o := slices.IndexFunc(others, func(o input) bool { return o.Name == name })
+		if j := slices.IndexFunc(later, func(o input) bool { return o.Name == name }); o < 0 && j >= 0 {
+			return later[j].how == "argument" || later[j].how == "part" && later[j].Flag == ""
 		}
-		return i >= 0 && others[i].how == "argument"
+		return o >= 0 && (others[o].how == "argument" || others[o].how == "part" && others[o].Flag == "")
 	}
 	switch in.how {
 	case "argument":
 		err = a.position(t, in.Name, arguments)
-	case "option", "flag":
+	case "option", "flag", "count":
 		// Options go before the positional arguments, as getopts needs.
 		if lone(t.Command, in.Name) < 0 {
 			t.Command = slices.Insert(t.Command, append(positions(t.Command, arguments), len(t.Command))[0], "{"+in.Name+"}")
 		}
-		if in.how == "option" {
+		switch in.how {
+		case "option":
 			in.Flag, err = a.text("  Option", cmp.Or(in.Flag, suggestedFlag(in.Name)),
 				"As the script spells it; end it with = to join the value, as in --tone=warm.", flagProblem)
+		case "count":
+			err = a.count(&in)
 		}
+	case "part":
+		err = a.part(t, &in, arguments)
 	case "variable":
 		err = a.variable(&in, others)
 	}
@@ -526,6 +694,94 @@ func (a *asker) pass(t *task, in input, others, later []input) (input, error) {
 		err = a.join(&in)
 	}
 	return in, err
+}
+
+// countFlag suggests the flag a count passes: -v for verbose.
+func countFlag(in input) string {
+	if in.Flag != "" {
+		return in.Flag
+	}
+	if in.Name[0] == '_' {
+		return suggestedFlag(in.Name)
+	}
+	return "-" + strings.ToLower(in.Name[:1])
+}
+
+// count asks for the flag a count passes once per one, whether a one-letter
+// flag stacks, as -vvv, and the most times a recipient can pass it.
+func (a *asker) count(in *input) error {
+	flag, err := a.text("  Flag", countFlag(*in), "Passed once per one, as the script spells it.", func(flag string) string {
+		if strings.HasSuffix(flag, "=") {
+			return "A count passes the flag alone; leave out the =."
+		}
+		return flagProblem(flag)
+	})
+	if err != nil {
+		return err
+	}
+	stacks := len(flag) == 2 && flag[0] == '-' && flag[1] != '-'
+	in.Flag, in.Count, in.Stack = flag, true, in.Stack && stacks
+	if stacks {
+		letter := flag[1:]
+		at, err := a.choose("  Written", []option{{"apart", flag + " " + flag + " " + flag}, {"stacked", flag + letter + letter}}, map[bool]int{true: 1}[in.Stack])
+		if err != nil {
+			return err
+		}
+		in.Stack = at == 1
+	}
+	most, err := a.text("  At most", cmp.Or(plain(in.Max), "3"), "The most times a recipient can pass it.", func(most string) string {
+		if n, err := strconv.Atoi(most); err != nil || n < 0 {
+			return "Use a whole number."
+		}
+		return ""
+	})
+	if n, _ := strconv.Atoi(most); err == nil && most != plain(in.Max) {
+		in.Max = float64(n)
+	}
+	return err
+}
+
+// part asks for the argument in's value goes inside, written as the script
+// takes it, and an option to pass before it. Without one it is positional, and
+// goes where the owner says; with one it goes before those, as options do.
+// Another input's {name} in it may be one still to come.
+func (a *asker) part(t *task, in *input, arguments func(string) bool) error {
+	self, current := placed(t.Command, in.Name), "{"+in.Name+"}"
+	if self > 0 {
+		current = t.Command[self]
+	}
+	arg, err := a.line("  Argument", current, "As the script takes it: {"+in.Name+"} for the value, with text or other inputs' {names}.",
+		func(arg string) string {
+			if !holds(arg, in.Name) {
+				return "Put {" + in.Name + "} in it."
+			}
+			return ""
+		}, false)
+	if err != nil {
+		return err
+	}
+	flag, err := a.text("  Option", in.Flag, "Optional: passed before the argument, as in -p; end it with = to join them.", func(flag string) string {
+		if flag == "" {
+			return ""
+		}
+		return flagProblem(flag)
+	})
+	if err != nil {
+		return err
+	}
+	in.Flag = flag
+	switch {
+	case self > 0:
+		t.Command[self] = arg
+	case flag != "":
+		t.Command = slices.Insert(t.Command, append(positions(t.Command, arguments), len(t.Command))[0], arg)
+	default:
+		t.Command = append(t.Command, arg)
+	}
+	if flag != "" {
+		return nil
+	}
+	return a.position(t, in.Name, arguments)
 }
 
 // variable asks for in's variable. One that can change what the script runs
@@ -608,7 +864,7 @@ func switchArgs(in input) (on, off string) {
 func (a *asker) join(in *input) error {
 	apart := map[string]string{"argument": "each value its own argument", "option": "the option before each value",
 		"variable": "each value on a line of its own", "stdin": "each value on a line of its own",
-		"part": "the argument once per value"}[in.how]
+		"part": "the argument once per value, beside the others' in it"}[in.how]
 	list := []option{{"apart", apart}, {"comma", "one text, as in a,b"}, {"space", "one text, as in a b"}, {"other", "one text, with what you type between values"}}
 	at := slices.Index([]string{"", ",", " "}, in.Join)
 	if at < 0 {
@@ -628,13 +884,17 @@ func (a *asker) join(in *input) error {
 	return err
 }
 
-// position asks where name's argument goes among the other positional
-// arguments of t's command, and moves it there.
+// position asks where the argument holding name goes among the other
+// positional arguments of t's command, and moves it there.
 func (a *asker) position(t *task, name string, arguments func(string) bool) error {
-	self, at := lone(t.Command, name), positions(t.Command, arguments)
+	self, text := placed(t.Command, name), "{"+name+"}"
+	if self > 0 {
+		text = t.Command[self]
+	}
+	at := slices.DeleteFunc(positions(t.Command, arguments), func(i int) bool { return i == self })
 	if len(at) == 0 {
 		if self < 0 {
-			t.Command = append(t.Command, "{"+name+"}")
+			t.Command = append(t.Command, text)
 		}
 		return nil
 	}
@@ -657,13 +917,15 @@ func (a *asker) position(t *task, name string, arguments func(string) bool) erro
 	if err != nil || chosen == current && self > 0 {
 		return err // where it was, the command stays as it is
 	}
-	t.Command = unplace(t.Command, name)
+	if self > 0 {
+		t.Command = slices.Delete(t.Command, self, self+1)
+	}
 	at = positions(t.Command, arguments)
 	where := at[len(at)-1] + 1
 	if chosen < len(at) {
 		where = at[chosen]
 	}
-	t.Command = slices.Insert(t.Command, where, "{"+name+"}")
+	t.Command = slices.Insert(t.Command, where, text)
 	return nil
 }
 
@@ -682,22 +944,40 @@ func lone(command []string, name string) int {
 	return -1
 }
 
+// placed is the index of the first argument of command holding name, or -1.
+func placed(command []string, name string) int {
+	if i := slices.IndexFunc(command[1:], func(arg string) bool { return holds(arg, name) }); i >= 0 {
+		return i + 1
+	}
+	return -1
+}
+
 // holds reports whether arg takes name's value.
 func holds(arg, name string) bool {
 	return slices.ContainsFunc(placeholder.FindAllStringSubmatch(arg, -1), func(m []string) bool { return m[1] == name })
 }
 
-// unplace removes the arguments of command that take name's value.
+// unplace takes name's value out of command: an argument of its own goes,
+// and one holding other {names} keeps them.
 func unplace(command []string, name string) []string {
-	return append(command[:1:1], slices.DeleteFunc(slices.Clone(command[1:]), func(arg string) bool { return holds(arg, name) })...)
+	kept := command[:1:1]
+	for _, arg := range command[1:] {
+		rest := strings.ReplaceAll(arg, "{"+name+"}", "")
+		if rest == arg || placeholder.MatchString(rest) {
+			kept = append(kept, rest)
+		}
+	}
+	return kept
 }
 
-// positions are the indexes in command of the positional arguments that
-// arguments says take an input's value.
+// positions are the indexes in command of the positional arguments: those
+// holding an input's value that arguments says is one, unless they start
+// with -, as an option does.
 func positions(command []string, arguments func(string) bool) []int {
 	var at []int
 	for i, arg := range command {
-		if m := placeholder.FindStringSubmatch(arg); i > 0 && m != nil && m[0] == arg && arguments(m[1]) {
+		if i > 0 && !strings.HasPrefix(arg, "-") &&
+			slices.ContainsFunc(placeholder.FindAllStringSubmatch(arg, -1), func(m []string) bool { return arguments(m[1]) }) {
 			at = append(at, i)
 		}
 	}
@@ -750,7 +1030,7 @@ func (a *asker) inputs(t *task) error {
 		if err != nil {
 			return err
 		}
-		a.recap(t.Inputs, keep)
+		a.recap(t, keep)
 	}
 	for {
 		a.hold = true
@@ -767,7 +1047,7 @@ func (a *asker) inputs(t *task) error {
 		if err != nil {
 			return err
 		}
-		a.recap(t.Inputs, more)
+		a.recap(t, more)
 		if !more {
 			break
 		}
@@ -778,14 +1058,14 @@ func (a *asker) inputs(t *task) error {
 	return nil
 }
 
-// recap replaces the answers held about the last input with one line.
-func (a *asker) recap(inputs []input, added bool) {
+// recap replaces the answers held about t's last input with one line.
+func (a *asker) recap(t *task, added bool) {
 	a.held, a.hold = nil, false
 	if !added {
 		return
 	}
-	label, in := "", inputs[len(inputs)-1]
-	if len(inputs) == 1 {
+	label, in := "", t.Inputs[len(t.Inputs)-1]
+	if len(t.Inputs) == 1 {
 		label = "Inputs"
 	}
 	about := in.Type
@@ -799,8 +1079,17 @@ func (a *asker) recap(inputs []input, added bool) {
 		about += ", required"
 	}
 	on, off := switchArgs(in)
-	about += ", " + map[string]string{"argument": "argument", "option": in.Flag, "flag": strings.Trim(on+"|"+off, "|"),
-		"variable": "$" + in.Env, "stdin": "stdin", "json": "JSON only", "part": "in an argument"}[in.how]
+	shown := ""
+	if at := placed(t.Command, in.Name); at > 0 {
+		shown = argShown(t, t.Command[at])
+	}
+	about += ", " + map[string]string{"argument": "argument", "option": in.Flag, "flag": strings.Trim(on+"|"+off, "|"), "count": shown,
+		"variable": "$" + in.Env, "stdin": "stdin", "json": "JSON only", "part": shown}[in.how]
+	for _, group := range t.pairs() {
+		if i := slices.Index(group, in.Name); i >= 0 {
+			about += ", in rows with " + strings.Join(slices.Delete(slices.Clone(group), i, i+1), " and ")
+		}
+	}
 	line := a.st.sgr(bold, pad(in.Name, 12)) + " " + a.st.sgr(dim, escape(about))
 	if in.Unsafe {
 		line += a.st.sgr(yellow, ", unsafe")
@@ -838,8 +1127,8 @@ func (a *asker) input(t *task, in input, later []input) (input, error) {
 		// The old type's settings would not fit the new one; how it is passed may.
 		in = input{Help: in.Help, Required: in.Required && inputTypes[kind].name != "boolean", how: in.how,
 			binding: binding{Flag: in.Flag, Env: in.Env, Stdin: in.Stdin, Unsafe: in.Unsafe}}
-		if in.how == "flag" || in.how == "option" {
-			in.how, in.Flag = "", "" // a boolean's flag and an option differ
+		if in.how == "flag" || in.how == "option" || in.how == "count" {
+			in.how, in.Flag = "", "" // a boolean's flag, an option and a count differ
 		}
 	}
 	in.Label, in.Name, in.Type = label, name, inputTypes[kind].name
@@ -882,6 +1171,9 @@ func (a *asker) input(t *task, in input, later []input) (input, error) {
 			return in, err
 		}
 	}
+	if in.how == "" && placed(t.Command, in.Name) > 0 {
+		in.how = how(t, in) // an argument written for another input holds it already
+	}
 	return a.pass(t, in, others, later)
 }
 
@@ -923,13 +1215,45 @@ func (a *asker) card(t *task) []string {
 	inner := w - 4
 	body := append([]string{st.sgr(bold, escape(t.Title))}, wrap(escape(t.Description), inner)...)
 	body = append(body, "")
-	labels := 0
+	// Inputs that go together show as one field of rows, where the first is.
+	type field struct {
+		label string
+		in    input
+		group []string
+	}
+	var fields []field
+	groups := t.pairs()
 	for _, in := range t.Inputs {
-		labels = max(labels, cols(escape(fieldLabel(in))))
+		f := field{escape(fieldLabel(in)), in, nil}
+		if g := slices.IndexFunc(groups, func(g []string) bool { return slices.Contains(g, in.Name) }); g >= 0 {
+			if groups[g][0] != in.Name {
+				continue
+			}
+			var names []string
+			for _, name := range groups[g] {
+				names = append(names, escape(fieldLabel(*t.input(name))))
+			}
+			f.label, f.group = strings.Join(names, st.sym(" · ", ", ")), groups[g]
+		}
+		fields = append(fields, f)
+	}
+	labels := 0
+	for _, f := range fields {
+		labels = max(labels, cols(f.label))
 	}
 	labels = min(labels, inner/3)
-	for _, in := range t.Inputs {
-		body = append(body, pad(fit(escape(fieldLabel(in)), labels, st), labels)+"  "+a.control(in))
+	for _, f := range fields {
+		control := a.control(f.in)
+		if f.group != nil {
+			// Each cell as wide as the rest of the line allows.
+			more, cells := " + more", []string{}
+			width := max(3, (inner-labels-2-len(more))/len(f.group)-5)
+			for _, name := range f.group {
+				cells = append(cells, a.cell(*t.input(name), width))
+			}
+			control = strings.Join(cells, " ") + st.sgr(dim, more)
+		}
+		body = append(body, pad(fit(f.label, labels, st), labels)+"  "+control)
 	}
 	if len(t.Inputs) == 0 {
 		body = append(body, st.sgr(dim, "This task needs no input."))
@@ -1040,6 +1364,19 @@ func (a *asker) control(in input) string {
 	return c
 }
 
+// cell sketches one value, n columns wide, of an input that goes in rows
+// with others.
+func (a *asker) cell(in input, n int) string {
+	shown := escape(in.Placeholder)
+	if list, _ := in.Default.([]any); len(list) > 0 {
+		shown = escape(plain(list[0]))
+	}
+	if in.Type == "choice" {
+		shown = pad(fit(shown, n-2, a.st), n-2) + " " + a.st.sym("▾", "v")
+	}
+	return a.st.sgr(dim, "[ "+pad(fit(shown, n, a.st), n)+" ]")
+}
+
 func expect(t *task) string {
 	if t.Output == nil {
 		return "You'll see when it's done"
@@ -1071,30 +1408,14 @@ func plain(value any) string {
 }
 
 // commandShown is t's command as the summary shows it, with variables before
-// it, flags with their values, ... after what repeats per value, and in
-// brackets each part a run can leave out.
+// it and each argument as argShown has it.
 func commandShown(t *task) string {
-	// As on the page: a switch, or a choice with a preset, always has a value,
-	// though a boolean's empty text passes nothing.
-	optional := func(in *input) bool {
-		if in == nil {
-			return false
-		}
-		on, off := in.switchTexts()
-		return in.Type == "boolean" && (on == "" || off == "") || !in.Required && in.Type != "boolean" && (in.Type != "choice" || in.Default == nil)
-	}
-	several := func(in *input) string {
-		if in != nil && in.Multiple && in.Join == "" {
-			return "..."
-		}
-		return ""
-	}
 	var parts []string
 	if env := envLine(t.Env); env != "" {
 		parts = append(parts, escape(env))
 	}
 	for _, in := range t.Inputs {
-		if part := commandLine([]string{in.Env + "={" + in.Name + "}"}); in.Env != "" && optional(&in) {
+		if part := commandLine([]string{in.Env + "={" + in.Name + "}"}); in.Env != "" && omissible(&in) {
 			parts = append(parts, "["+part+"]")
 		} else if in.Env != "" {
 			parts = append(parts, part)
@@ -1102,31 +1423,58 @@ func commandShown(t *task) string {
 	}
 	parts = append(parts, commandLine(t.Command[:1]))
 	for _, arg := range t.Command[1:] {
-		part, left, repeats := commandLine([]string{arg}), false, ""
-		for _, m := range placeholder.FindAllStringSubmatch(arg, -1) {
-			left = left || optional(t.input(m[1]))
-			repeats = cmp.Or(repeats, several(t.input(m[1])))
-		}
-		if in := t.input(strings.TrimSuffix(strings.TrimPrefix(arg, "{"), "}")); in != nil && arg == "{"+in.Name+"}" {
-			switch on, off := switchArgs(*in); {
-			case in.Type == "boolean":
-				shown := slices.DeleteFunc([]string{on, off}, func(text string) bool { return text == "" })
-				for i, text := range shown {
-					shown[i] = commandLine([]string{text})
-				}
-				part = strings.Join(shown, "|")
-			case strings.HasSuffix(in.Flag, "="):
-				part = commandLine([]string{in.Flag + arg})
-			case in.Flag != "":
-				part = commandLine([]string{in.Flag, arg})
-			}
-		}
-		if left {
-			part = "[" + part + "]"
-		}
-		parts = append(parts, part+repeats)
+		parts = append(parts, argShown(t, arg))
 	}
 	return strings.Join(parts, " ")
+}
+
+// omissible reports whether a run can pass in without a value or text. As on
+// the page, a switch or a choice with a preset always has a value, though a
+// boolean's empty text passes nothing, and a count of none passes nothing.
+func omissible(in *input) bool {
+	if in == nil {
+		return false
+	}
+	on, off := in.switchTexts()
+	return in.Count || in.Type == "boolean" && (on == "" || off == "") ||
+		!in.Required && in.Type != "boolean" && (in.Type != "choice" || in.Default == nil)
+}
+
+// argShown is an argument of t's command as the summary shows it: with the
+// flag before it, a boolean's texts, a count's flag, ... after what repeats
+// per value, and in brackets when a run can leave it out.
+func argShown(t *task, arg string) string {
+	part, left, repeats := commandLine([]string{arg}), false, ""
+	for _, m := range placeholder.FindAllStringSubmatch(arg, -1) {
+		in := t.input(m[1])
+		left = left || omissible(in)
+		if in != nil && in.Multiple && in.Join == "" {
+			repeats = "..."
+		}
+	}
+	in := t.input(strings.TrimSuffix(strings.TrimPrefix(arg, "{"), "}"))
+	flag, _ := t.argFlag(arg) // parse refuses two
+	switch {
+	case in != nil && arg == "{"+in.Name+"}" && in.Count && in.Stack:
+		part, repeats = commandLine([]string{in.Flag + in.Flag[1:]}), "..."
+	case in != nil && arg == "{"+in.Name+"}" && in.Count:
+		part, repeats = commandLine([]string{in.Flag}), "..."
+	case in != nil && arg == "{"+in.Name+"}" && in.Type == "boolean":
+		on, off := switchArgs(*in)
+		shown := slices.DeleteFunc([]string{on, off}, func(text string) bool { return text == "" })
+		for i, text := range shown {
+			shown[i] = commandLine([]string{text})
+		}
+		part = strings.Join(shown, "|")
+	case strings.HasSuffix(flag, "="):
+		part = commandLine([]string{flag + arg})
+	case flag != "":
+		part = commandLine([]string{flag, arg})
+	}
+	if left {
+		part = "[" + part + "]"
+	}
+	return part + repeats
 }
 
 // stdinShown says what the command reads, if anything.

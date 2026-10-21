@@ -26,7 +26,8 @@ Decisions live in `adr/NNNN-short-title.md`, using Status, Context, Decision, an
 | [0008](adr/0008-local-first-proof-of-concept.md) | Local-first proof of concept with infrastructure stand-ins | Accepted |
 | [0009](adr/0009-poc-signaling-and-peer-authentication.md) | Proof-of-concept signaling and peer authentication | Accepted; review pending |
 | [0010](adr/0010-input-passing.md) | Inputs reach a script the way it takes them | Accepted; amended by 0011 |
-| [0011](adr/0011-adapt-to-the-script.md) | Runlink adapts to the script | Accepted |
+| [0011](adr/0011-adapt-to-the-script.md) | Runlink adapts to the script | Accepted; amended by 0012 |
+| [0012](adr/0012-counts-rows-and-moved-scripts.md) | Counted flags, values in rows, and moved scripts | Accepted |
 
 ## Container view
 

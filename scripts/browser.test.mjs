@@ -337,6 +337,41 @@ try {
   assert.deepEqual([receipts[0], ...receipts.slice(2)], ['first, second', 'Two, c', 'a.txt, b.txt']);
   await page.evaluate(() => window.calls[0].resolve([]));
 
+  // Inputs that go together fill in as rows, a control for each in every row: a row
+  // filled in halfway is refused, an empty one is skipped, and each input's list
+  // follows the rows.
+  await page.evaluate(installTask, { title: 'Pairs', inputs: [
+    { name: 'host', type: 'text', label: 'Host', multiple: true },
+    { name: 'port', type: 'number', label: 'Port', multiple: true, default: [80] },
+    { name: 'proto', type: 'choice', label: 'Protocol', multiple: true, options: ['tcp', 'udp'] },
+    { name: 'note', type: 'text', label: 'Note' },
+  ], pairs: [['host', 'port', 'proto']] });
+  await page.evaluate(async data => (await import('/assets/loader.mjs')).mountGUI(new Uint8Array(data), window.task), gui);
+  assert.equal(await page.locator('.field').count(), 2);
+  assert.equal(await page.locator('.together legend').textContent(), 'Host, Port and Protocol, optional');
+  assert.equal(await page.locator('.together .heads > span').count(), 3);
+  assert.equal(await page.locator('#input-0-0-1').inputValue(), '80');
+  await page.locator('#input-0').fill('a');
+  await page.locator('.run').click();
+  assert.equal(await calls(), 0);
+  assert.match(await page.locator('#input-0-error').textContent(), /Fill in Protocol too, or remove the row/);
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'input-0-0-2');
+  await page.locator('#input-0-0-2').selectOption('tcp');
+  const pairs = page.locator('.together');
+  await pairs.getByRole('button', { name: 'Add another' }).click();
+  assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), 'Host, row 2');
+  await page.locator('#input-0-1-0').fill('b');
+  await page.locator('#input-0-1-1').fill('443');
+  await page.locator('#input-0-1-2').selectOption('udp');
+  await pairs.getByRole('button', { name: 'Add another' }).click();
+  await page.locator('.run').click();
+  assert.deepEqual(await page.evaluate(() => window.calls[0].values), { host: ['a', 'b'], port: [80, 443], proto: ['tcp', 'udp'] });
+  assert.equal(await pairs.locator('.shown').textContent(), 'a · 80 · tcp\nb · 443 · udp');
+  // A rejection of either input marks the rows.
+  await page.evaluate(() => window.calls[0].reject(Object.assign(new Error(''), { code: 'invalid', fields: { port: 'Fill in every field of each row.' } })));
+  await page.waitForFunction(() => document.querySelector('#input-0-error').textContent.includes('Fill in every field'));
+  assert.equal(await page.locator('.together [aria-invalid="true"]').count(), 9);
+
   // A definition the GUI does not understand, down to one property's type, fails loudly instead of rendering.
   assert.deepEqual(await page.evaluate(async data => {
     const { mountGUI } = await import('/assets/loader.mjs');
@@ -345,9 +380,13 @@ try {
       { name: 'a', type: 'date', default: '2026-13-01' }, { name: 'a', type: 'date', max: '2026-02-30' },
       { name: 'a', type: 'date', default: '0000-01-01' }, { name: 'a', type: 'date', min: '0000-01-01' }, { name: 'a', type: 'date', max: '0000-12-31' },
       { name: 'a', type: 'boolean', multiple: true }, { name: 'a', type: 'text', multiple: true, default: 'x' }, { name: 'a', type: 'text', multiple: 'yes' }];
-    return Promise.all(inputs.map(input => mountGUI(new Uint8Array(data), { definition: { title: 'x', inputs: [input] }, run() {} })
-      .then(() => 'mounted', error => error.message)));
-  }, gui), Array(13).fill('Unsupported task definition'));
+    // Pairs name two or more inputs of several values each, other than files, and each input once.
+    const lists = [{ name: 'a', type: 'text', multiple: true }, { name: 'b', type: 'text', multiple: true }, { name: 'c', type: 'text' },
+      { name: 'd', type: 'file', multiple: true }];
+    const pairs = [[['a']], [['a', 'c']], [['a', 'd']], [['a', 'x']], [['a', 'b'], ['b', 'a']], ['ab'], { a: 'b' }];
+    return Promise.all([...inputs.map(input => ({ title: 'x', inputs: [input] })), ...pairs.map(pairs => ({ title: 'x', inputs: lists, pairs }))]
+      .map(definition => mountGUI(new Uint8Array(data), { definition, run() {} }).then(() => 'mounted', error => error.message)));
+  }, gui), Array(20).fill('Unsupported task definition'));
   // CSP refusals, such as a blocked font, surface only as console errors.
   assert.deepEqual(logged, []);
 
@@ -372,7 +411,7 @@ try {
   assert.equal((await fetch(`${origin}/assets/loader.mjs`, { headers: { 'Service-Worker': 'script' } })).status, 403);
   assert.deepEqual(errors, []);
   console.log('Chromium: fragment cleanup, reload, secret entry, fonts, GUI verification, input checks, run states, ' +
-    'download-only files, fields of several values, ingress and worker isolation passed');
+    'download-only files, fields of several values, rows of values that go together, ingress and worker isolation passed');
 } finally {
   // Every teardown step runs even when another fails; the first failure is reported.
   upstream.close();

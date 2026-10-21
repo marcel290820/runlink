@@ -65,6 +65,8 @@ type binding struct {
 	On     *string `json:"on,omitempty"`     // a boolean's text when on: true, or its flag
 	Off    *string `json:"off,omitempty"`    // and when off: false, or nothing after a flag
 	Join   string  `json:"join,omitempty"`   // passes several values as one text
+	Count  bool    `json:"count,omitempty"`  // a number passes its flag that many times
+	Stack  bool    `json:"stack,omitempty"`  // and as one argument, -vvv
 	Unsafe bool    `json:"unsafe,omitempty"` // lets the value set any variable and start with -
 }
 
@@ -222,23 +224,25 @@ func (t *task) parse(data []byte) error {
 			return fmt.Errorf("env %s: a value cannot hold a null character", name)
 		}
 	}
-	// After --, an argument cannot be an option. An argument repeats once per
-	// value of one input with several, so it cannot hold two.
-	used, lone, whole, lists := map[string]bool{}, map[string]bool{}, map[string]bool{}, map[string]bool{}
+	// After --, an argument cannot be an option, and a flag ending in = makes
+	// one of the argument after it.
+	used, lone, whole := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	dashes := false
 	for _, arg := range t.Command[1:] {
 		dashes = dashes || arg == "--"
-		list := ""
+		flag, err := t.argFlag(arg)
+		if err != nil {
+			return err
+		}
 		for _, m := range placeholder.FindAllStringSubmatchIndex(arg, -1) {
 			name := arg[m[2]:m[3]]
 			used[name], lone[name] = true, lone[name] || m[1]-m[0] == len(arg)
-			whole[name] = whole[name] || m[0] == 0 && !dashes
-			if in := t.input(name); in != nil && in.Multiple && in.Join == "" && name != list {
-				if list != "" {
-					return fmt.Errorf("inputs %s and %s both take several values in one argument; give one a join", list, name)
-				}
-				list, lists[name] = name, true
-			}
+			whole[name] = whole[name] || m[0] == 0 && !dashes && !strings.HasSuffix(flag, "=")
+		}
+	}
+	for _, group := range t.pairs() {
+		if slices.ContainsFunc(group, func(name string) bool { return t.input(name).Type == "file" }) {
+			return fmt.Errorf("inputs %s go together row by row in an argument, which a file input cannot", strings.Join(group, " and "))
 		}
 	}
 	seen, envs, stdin, files := map[string]bool{}, map[string]bool{}, 0, 0
@@ -247,14 +251,17 @@ func (t *task) parse(data []byte) error {
 		if !inputName.MatchString(in.Name) || seen[in.Name] {
 			return fmt.Errorf("input %d needs a unique name of letters, digits and _", i+1)
 		}
-		seen[in.Name], in.whole = true, whole[in.Name] && !strings.HasSuffix(in.Flag, "=")
+		seen[in.Name], in.whole = true, whole[in.Name]
 		if err := in.validate(); err != nil {
 			return fmt.Errorf("input %s: %w", in.Name, err)
 		}
 		_, fixed := t.Env[in.Env]
+		low, _ := in.Min.(float64)
 		switch {
-		case in.Flag != "" && !lone[in.Name]:
-			return fmt.Errorf("input %s: a flag needs {%[1]s} as a whole argument of command", in.Name)
+		case in.Flag != "" && !used[in.Name]:
+			return fmt.Errorf("input %s: a flag needs {%[1]s} in an argument of command", in.Name)
+		case in.Flag != "" && (in.Type == "boolean" || in.Count) && !lone[in.Name]:
+			return fmt.Errorf("input %s: this flag needs {%[1]s} as a whole argument of command", in.Name)
 		case in.Env != "" && !envName.MatchString(in.Env):
 			return fmt.Errorf("input %s: env must be letters, digits and _, not starting with a digit", in.Name)
 		case in.Env != "" && unsafeEnv(in.Env) && !in.Unsafe:
@@ -271,6 +278,18 @@ func (t *task) parse(data []byte) error {
 			return fmt.Errorf("input %s: a boolean has one value, not several", in.Name)
 		case in.Join != "" && !in.Multiple:
 			return fmt.Errorf("input %s: join is for several values", in.Name)
+		case in.Count && in.Type != "number":
+			return fmt.Errorf("input %s: a count is a number, of times to pass its flag", in.Name)
+		case in.Count && (in.Flag == "" || strings.HasSuffix(in.Flag, "=")):
+			return fmt.Errorf("input %s: a count needs the flag it passes, as -v", in.Name)
+		case in.Count && in.Max == nil:
+			return fmt.Errorf("input %s: a count needs max, the most times it passes its flag", in.Name)
+		case in.Count && (low < 0 || low != math.Trunc(low) || in.Step != math.Trunc(in.Step)):
+			return fmt.Errorf("input %s: a count's min and step are whole numbers, and min is 0 or more", in.Name)
+		case in.Count && (in.Multiple || in.Env != "" || in.Stdin):
+			return fmt.Errorf("input %s: a count passes only its flag, once per one", in.Name)
+		case in.Stack && (!in.Count || len(in.Flag) != 2 || in.Flag[1] == '-'):
+			return fmt.Errorf("input %s: stack writes a count of a one-letter flag as one argument, as -vvv", in.Name)
 		}
 		envs[in.Env] = in.Env != ""
 		if in.Stdin {
@@ -307,6 +326,12 @@ func (in *input) validate() error {
 	case "number":
 		if !isNumber(in.Min) || !isNumber(in.Max) || in.Step < 0 {
 			return errors.New("min and max must be numbers and step positive")
+		}
+		if in.Count && in.Min == nil {
+			in.Min = 0.0 // so the page shows whole numbers from none
+		}
+		if in.Count && in.Step == 0 {
+			in.Step = 1
 		}
 	case "date":
 		if !isDate(in.Min) || !isDate(in.Max) {
@@ -431,8 +456,23 @@ func (t *task) check(values map[string]any) (args map[string][]string, problems 
 			slices.ContainsFunc(starts, func(text string) bool { return strings.HasPrefix(text, "-") }) {
 			problems[in.Name] = dashProblem
 		}
+		if in.Count && problems[in.Name] == "" {
+			// check made it a whole number, at most max.
+			texts = slices.Repeat([]string{in.Flag}, int(value.(float64)))
+			if in.Stack && len(texts) > 0 {
+				texts = []string{"-" + strings.Repeat(in.Flag[1:], len(texts))}
+			}
+		}
 		if problems[in.Name] == "" {
 			args[in.Name] = texts
+		}
+	}
+	// Values that go together come in rows, each with all of them.
+	for _, group := range t.pairs() {
+		if rows := len(args[group[0]]); slices.ContainsFunc(group, func(name string) bool { return len(args[name]) != rows }) {
+			for _, name := range group {
+				problems[name] = cmp.Or(problems[name], "Fill in every field of each row.")
+			}
 		}
 	}
 	return args, problems
@@ -571,14 +611,87 @@ func (t *task) input(name string) *input {
 	return nil
 }
 
-// public is the definition recipients get, without how inputs reach the command.
-func (t *task) public() definition {
+// shown is what recipients get of a task: its definition, without how inputs
+// reach the command, and which inputs they fill in together, as rows.
+type shown struct {
+	definition
+	Pairs [][]string `json:"pairs,omitempty"`
+}
+
+func (t *task) public() shown {
 	d := t.definition
 	d.Inputs = slices.Clone(d.Inputs)
 	for i := range d.Inputs {
 		d.Inputs[i].binding = binding{}
 	}
-	return d
+	return shown{d, t.pairs()}
+}
+
+// lists are the inputs of several values that arg holds unjoined. The
+// argument repeats once per value, taking the k-th of each, so theirs go
+// together.
+func (t *task) lists(arg string) []string {
+	var names []string
+	for _, m := range placeholder.FindAllStringSubmatch(arg, -1) {
+		if in := t.input(m[1]); in != nil && in.Multiple && in.Join == "" && !slices.Contains(names, in.Name) {
+			names = append(names, in.Name)
+		}
+	}
+	return names
+}
+
+// pairs are the inputs whose values go together row by row, as an argument
+// holds two or more of them, in input order.
+func (t *task) pairs() [][]string {
+	var groups [][]string
+	for _, arg := range t.Command[1:] {
+		group := t.lists(arg)
+		if len(group) < 2 {
+			continue
+		}
+		// An input in two arguments joins their groups.
+		groups = slices.DeleteFunc(groups, func(g []string) bool {
+			if !slices.ContainsFunc(g, func(name string) bool { return slices.Contains(group, name) }) {
+				return false
+			}
+			for _, name := range g {
+				if !slices.Contains(group, name) {
+					group = append(group, name)
+				}
+			}
+			return true
+		})
+		groups = append(groups, group)
+	}
+	order := func(name string) int {
+		return slices.IndexFunc(t.Inputs, func(in input) bool { return in.Name == name })
+	}
+	for _, g := range groups {
+		slices.SortFunc(g, func(a, b string) int { return order(a) - order(b) })
+	}
+	slices.SortFunc(groups, func(a, b []string) int { return order(a[0]) - order(b[0]) })
+	return groups
+}
+
+// argFlag is the flag passed before arg, or joined to it when it ends in =:
+// that of the one input in arg that passes its value after a flag. A
+// boolean's flag and a count's are their own texts instead.
+func (t *task) argFlag(arg string) (string, error) {
+	var flagged *input
+	for _, m := range placeholder.FindAllStringSubmatch(arg, -1) {
+		in := t.input(m[1])
+		if in == nil || in.Flag == "" || in.Type == "boolean" || in.Count || in == flagged {
+			continue
+		}
+		if flagged != nil {
+			return "", fmt.Errorf("inputs %s and %s both give the argument %q a flag", flagged.Name, in.Name, arg)
+		}
+		flagged = in
+	}
+	if flagged == nil {
+		return "", nil
+	}
+	return flagged.Flag, nil
 }
 
 // texts are what in passes for checked values: one text per value, or all
@@ -596,7 +709,8 @@ func texts(in *input, args map[string][]string) (passed []string, ok bool) {
 // value's own braces stay literal. An argument holding an input with several
 // values repeats once per value. An argument whose value is absent is left
 // out, but a lone {name} passed alone stays as empty text while a later
-// positional argument is passed, so that one keeps its place.
+// positional argument is passed, so that one keeps its place. An argument
+// holding an input with a flag gets the flag before it, or joined to it.
 func (t *task) argv(args map[string][]string) ([]string, error) {
 	argv, holes, dashes := []string{t.Command[0]}, []int{}, false
 	for _, arg := range t.Command[1:] {
@@ -607,10 +721,11 @@ func (t *task) argv(args map[string][]string) ([]string, error) {
 				switch {
 				case !ok && in.Flag == "" && !in.Multiple && in.Type != "boolean":
 					argv, holes = append(argv, ""), append(holes, len(argv))
-				case in.Flag == "" || in.Type == "boolean" && !strings.HasSuffix(in.Flag, "="):
-					// A boolean's text, as its flag, is an option unless it says otherwise.
+				case in.Flag == "" || in.Type == "boolean" && !strings.HasSuffix(in.Flag, "=") || in.Count:
+					// A boolean's text, as its flag, is an option unless it says
+					// otherwise; a count's are its flag.
 					for _, value := range values {
-						if argv = append(argv, value); in.Type != "boolean" || dashes || !strings.HasPrefix(value, "-") {
+						if argv = append(argv, value); in.Type != "boolean" && !in.Count || dashes || !strings.HasPrefix(value, "-") {
 							holes = holes[:0]
 						}
 					}
@@ -626,31 +741,35 @@ func (t *task) argv(args map[string][]string) ([]string, error) {
 				continue
 			}
 		}
-		list := ""
-		for _, m := range placeholder.FindAllStringSubmatch(arg, -1) {
-			if in := t.input(m[1]); in != nil && in.Multiple && in.Join == "" {
-				list = in.Name
-			}
-		}
 		repeats := 1
-		if list != "" {
-			repeats = len(args[list])
+		if lists := t.lists(arg); len(lists) > 0 {
+			repeats = len(args[lists[0]]) // check made theirs as many
+		}
+		flag, err := t.argFlag(arg)
+		if err != nil {
+			return nil, err
 		}
 		for k := range repeats {
-			filled, leads, absent := t.fill(arg, args, list, k)
+			filled, leads, absent := t.fill(arg, args, k)
 			if absent {
 				continue
 			}
 			// check refuses such text where a value starts the argument; an
 			// empty one before more text could still make an option, unless
 			// every input up to the dash is the owner's own text or unsafe.
-			if !dashes && !strings.HasPrefix(arg, "-") && strings.HasPrefix(filled, "-") &&
+			if !dashes && !strings.HasSuffix(flag, "=") && !strings.HasPrefix(arg, "-") && strings.HasPrefix(filled, "-") &&
 				slices.ContainsFunc(leads, func(in *input) bool { return in.Type != "boolean" && in.Type != "choice" && !in.Unsafe }) {
 				return nil, &runError{Code: "failed", Message: "A value would have made an option of an argument."}
 			}
-			argv = append(argv, filled)
-			if !strings.HasPrefix(arg, "-") || dashes && arg != "--" {
-				holes = holes[:0] // a positional argument, not an option
+			switch {
+			case strings.HasSuffix(flag, "="):
+				argv = append(argv, flag+filled)
+			case flag != "":
+				argv = append(argv, flag, filled)
+			default:
+				if argv = append(argv, filled); !strings.HasPrefix(arg, "-") || dashes && arg != "--" {
+					holes = holes[:0] // a positional argument, not an option
+				}
 			}
 		}
 	}
@@ -660,10 +779,10 @@ func (t *task) argv(args map[string][]string) ([]string, error) {
 	return argv, nil
 }
 
-// fill replaces arg's placeholders with their values, list's k-th of its
-// several. leads are the inputs up to the result's first character, empty
-// ones included, and absent says some input has none.
-func (t *task) fill(arg string, args map[string][]string, list string, k int) (filled string, leads []*input, absent bool) {
+// fill replaces arg's placeholders with their values, the k-th of those with
+// several apart. leads are the inputs up to the result's first character,
+// empty ones included, and absent says some input has none.
+func (t *task) fill(arg string, args map[string][]string, k int) (filled string, leads []*input, absent bool) {
 	var b strings.Builder
 	at := 0
 	for _, m := range placeholder.FindAllStringSubmatchIndex(arg, -1) {
@@ -680,7 +799,11 @@ func (t *task) fill(arg string, args map[string][]string, list string, k int) (f
 			continue
 		}
 		value := values[0]
-		if in.Name == list {
+		if in.Multiple && in.Join == "" {
+			if k >= len(values) {
+				absent = true
+				continue
+			}
 			value = values[k]
 		}
 		if b.Len() == 0 {

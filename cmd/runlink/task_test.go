@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -35,7 +38,21 @@ func TestLoadTaskRejectsInvalidFiles(t *testing.T) {
 		"date bound":       `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "date", "max": "2026-02-30"}]}`,
 		"bad default":      `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "choice", "options": ["x"], "default": "y"}]}`,
 		"flag unplaced":    `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "text", "flag": "--a"}]}`,
-		"flag in text":     `{"title": "T", "command": ["./task.sh", "x{a}"], "inputs": [{"name": "a", "type": "text", "flag": "--a"}]}`,
+		"flag nowhere":     `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "text", "flag": "--a"}]}`,
+		"switch in text":   `{"title": "T", "command": ["./task.sh", "x{a}"], "inputs": [{"name": "a", "type": "boolean", "flag": "--a"}]}`,
+		"two flags":        `{"title": "T", "command": ["./task.sh", "{a}{b}"], "inputs": [{"name": "a", "type": "text", "flag": "-a"}, {"name": "b", "type": "text", "flag": "-b"}]}`,
+		"count of text":    `{"title": "T", "command": ["./task.sh", "{v}"], "inputs": [{"name": "v", "type": "text", "flag": "-v", "count": true}]}`,
+		"count no flag":    `{"title": "T", "command": ["./task.sh", "{v}"], "inputs": [{"name": "v", "type": "number", "max": 3, "count": true}]}`,
+		"count joined":     `{"title": "T", "command": ["./task.sh", "{v}"], "inputs": [{"name": "v", "type": "number", "max": 3, "flag": "-v=", "count": true}]}`,
+		"count no max":     `{"title": "T", "command": ["./task.sh", "{v}"], "inputs": [{"name": "v", "type": "number", "flag": "-v", "count": true}]}`,
+		"count below 0":    `{"title": "T", "command": ["./task.sh", "{v}"], "inputs": [{"name": "v", "type": "number", "min": -1, "max": 3, "flag": "-v", "count": true}]}`,
+		"count by halves":  `{"title": "T", "command": ["./task.sh", "{v}"], "inputs": [{"name": "v", "type": "number", "max": 3, "step": 0.5, "flag": "-v", "count": true}]}`,
+		"count in text":    `{"title": "T", "command": ["./task.sh", "-{v}"], "inputs": [{"name": "v", "type": "number", "max": 3, "flag": "-v", "count": true}]}`,
+		"count of several": `{"title": "T", "command": ["./task.sh", "{v}"], "inputs": [{"name": "v", "type": "number", "max": 3, "flag": "-v", "count": true, "multiple": true}]}`,
+		"count variable":   `{"title": "T", "command": ["./task.sh", "{v}"], "inputs": [{"name": "v", "type": "number", "max": 3, "flag": "-v", "count": true, "env": "V"}]}`,
+		"stack no count":   `{"title": "T", "command": ["./task.sh", "{v}"], "inputs": [{"name": "v", "type": "boolean", "flag": "-v", "stack": true}]}`,
+		"stack long flag":  `{"title": "T", "command": ["./task.sh", "{v}"], "inputs": [{"name": "v", "type": "number", "max": 3, "flag": "--verbose", "count": true, "stack": true}]}`,
+		"stack dash dash":  `{"title": "T", "command": ["./task.sh", "{v}"], "inputs": [{"name": "v", "type": "number", "max": 3, "flag": "--", "count": true, "stack": true}]}`,
 		"env name":         `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "text", "env": "1A"}]}`,
 		"env PATH":         `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "text", "env": "PATH"}]}`,
 		"env loader":       `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "text", "env": "LD_PRELOAD"}]}`,
@@ -46,7 +63,7 @@ func TestLoadTaskRejectsInvalidFiles(t *testing.T) {
 		"flag and on":      `{"title": "T", "command": ["./task.sh", "{a}"], "inputs": [{"name": "a", "type": "boolean", "flag": "-a", "on": "-b"}]}`,
 		"several booleans": `{"title": "T", "command": ["./task.sh", "{a}"], "inputs": [{"name": "a", "type": "boolean", "multiple": true}]}`,
 		"join alone":       `{"title": "T", "command": ["./task.sh", "{a}"], "inputs": [{"name": "a", "type": "text", "join": ","}]}`,
-		"two lists":        `{"title": "T", "command": ["./task.sh", "{a}{b}"], "inputs": [{"name": "a", "type": "text", "multiple": true}, {"name": "b", "type": "text", "multiple": true}]}`,
+		"paired files":     `{"title": "T", "command": ["./task.sh", "{a}={b}"], "inputs": [{"name": "a", "type": "text", "multiple": true}, {"name": "b", "type": "file", "multiple": true}]}`,
 		"list default":     `{"title": "T", "command": ["./task.sh", "{a}"], "inputs": [{"name": "a", "type": "text", "multiple": true, "default": "x"}]}`,
 		"list item":        `{"title": "T", "command": ["./task.sh", "{a}"], "inputs": [{"name": "a", "type": "number", "multiple": true, "default": [1, "2"]}]}`,
 		"list null":        `{"title": "T", "command": ["./task.sh", "{a}"], "inputs": [{"name": "a", "type": "text", "multiple": true, "default": ["x", null]}]}`,
@@ -77,7 +94,7 @@ func TestLoadTaskRejectsInvalidFiles(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if out, err := tk.run(t.Context(), map[string]any{}, nil, func(string) {}); err != nil || string(out) != "hello\n" || tk.Title != name {
+		if out, err := stdoutOf(tk.run(t.Context(), map[string]any{}, nil, func(string) {})); err != nil || out != "hello\n" || tk.Title != name {
 			t.Fatalf("%s: %q %v %+v", name, out, err, tk.definition)
 		}
 	}
@@ -94,9 +111,9 @@ func TestLoadTaskRejectsInvalidFiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := tk.run(t.Context(), map[string]any{}, nil, func(string) {})
-	if (err == nil) != (directErr == nil) || err == nil && string(out) != string(direct) ||
-		runtime.GOOS == "linux" && string(out) != "["+quotedLine+"]\n" {
+	out, err := stdoutOf(tk.run(t.Context(), map[string]any{}, nil, func(string) {}))
+	if (err == nil) != (directErr == nil) || err == nil && out != string(direct) ||
+		runtime.GOOS == "linux" && out != "["+quotedLine+"]\n" {
 		t.Fatalf("a quoted #! line: %q %v, run directly %q %v", out, err, direct, directErr)
 	}
 	unknown := filepath.Join(dir, "hello.unknown")
@@ -157,6 +174,9 @@ func TestCheckValidatesRecipientValues(t *testing.T) {
 	}
 }
 
+// stdoutOf is a run's stdout as text.
+func stdoutOf(stdout []byte, err error) (string, error) { return string(stdout), err }
+
 func TestRunOutcomes(t *testing.T) {
 	for name, tc := range map[string]struct {
 		script, output string
@@ -210,8 +230,8 @@ func TestRunEndsEverythingItStarted(t *testing.T) {
 		t.Fatal(err)
 	}
 	var child string
-	out, err := tk.run(t.Context(), map[string]any{}, nil, func(line string) { child = line })
-	if err != nil || string(out) != "done\n" {
+	out, err := stdoutOf(tk.run(t.Context(), map[string]any{}, nil, func(line string) { child = line }))
+	if err != nil || out != "done\n" {
 		t.Fatalf("%q %v", out, err)
 	}
 	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(50 * time.Millisecond) {
@@ -243,7 +263,7 @@ func TestProgramTakesNoInput(t *testing.T) {
 		t.Fatal(err)
 	}
 	args, problems := tk.check(map[string]any{"name": "evil"})
-	if out, err := tk.run(t.Context(), map[string]any{"name": "evil"}, args, func(string) {}); len(problems) != 0 || err != nil || string(out) != "fixed\n" {
+	if out, err := stdoutOf(tk.run(t.Context(), map[string]any{"name": "evil"}, args, func(string) {})); len(problems) != 0 || err != nil || out != "fixed\n" {
 		t.Fatalf("%q %v %v", out, err, problems)
 	}
 }
@@ -288,7 +308,7 @@ func TestInputsReachTheScriptAsItTakesThem(t *testing.T) {
 		{map[string]any{"verbose": false, "color": true, "second": "b"}, "[--color=true][][b]\nTOKEN=unset\n\n\n"},
 	} {
 		args, problems := tk.check(tc.values)
-		if out, err := tk.run(t.Context(), tc.values, args, func(string) {}); len(problems) != 0 || err != nil || string(out) != tc.want {
+		if out, err := stdoutOf(tk.run(t.Context(), tc.values, args, func(string) {})); len(problems) != 0 || err != nil || out != tc.want {
 			t.Errorf("%v: %q %v %v", tc.values, out, err, problems)
 		}
 	}
@@ -299,7 +319,7 @@ func TestInputsReachTheScriptAsItTakesThem(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if out, err := tk.run(t.Context(), map[string]any{"second": "x"}, map[string][]string{"second": {"x"}}, func(string) {}); err != nil || string(out) != "[][out-x]" {
+	if out, err := stdoutOf(tk.run(t.Context(), map[string]any{"second": "x"}, map[string][]string{"second": {"x"}}, func(string) {})); err != nil || out != "[][out-x]" {
 		t.Errorf("a later argument with more text: %q %v", out, err)
 	}
 
@@ -333,7 +353,7 @@ func TestInputsReachTheScriptAsItTakesThem(t *testing.T) {
 		}
 		values := map[string]any{"prefix": "", "name": "rf"}
 		args, _ := tk.check(values)
-		if out, err := tk.run(t.Context(), values, args, func(string) {}); want == "" && (err != nil || string(out) != "[-rf]") ||
+		if out, err := stdoutOf(tk.run(t.Context(), values, args, func(string) {})); want == "" && (err != nil || out != "[-rf]") ||
 			want != "" && (err == nil || !strings.Contains(err.Error(), want)) {
 			t.Errorf("an empty prefix, unsafe %s: %q %v", unsafe, out, err)
 		}
@@ -348,7 +368,7 @@ func TestInputsReachTheScriptAsItTakesThem(t *testing.T) {
 	if err := os.WriteFile(doc, []byte("contents\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := tk.run(t.Context(), map[string]any{"doc": doc}, map[string][]string{"doc": {doc}}, func(string) {}); err != nil || string(out) != "contents\n" {
+	if out, err := stdoutOf(tk.run(t.Context(), map[string]any{"doc": doc}, map[string][]string{"doc": {doc}}, func(string) {})); err != nil || out != "contents\n" {
 		t.Fatalf("a file on stdin: %q %v", out, err)
 	}
 }
@@ -387,7 +407,7 @@ func TestScriptsGetValuesTheirOwnWay(t *testing.T) {
 			"[--no-color][--no-verify]\nTAGS=unset DEBUG=unset MODE=prod\n"},
 	} {
 		args, problems := tk.check(tc.values)
-		if out, err := tk.run(t.Context(), tc.values, args, func(string) {}); len(problems) != 0 || err != nil || string(out) != tc.want {
+		if out, err := stdoutOf(tk.run(t.Context(), tc.values, args, func(string) {})); len(problems) != 0 || err != nil || out != tc.want {
 			t.Errorf("%v: %q %v %v", tc.values, out, err, problems)
 		}
 	}
@@ -430,7 +450,7 @@ func TestScriptsGetValuesTheirOwnWay(t *testing.T) {
 		}
 		docs = append(docs, doc)
 	}
-	if out, err := tk.run(t.Context(), map[string]any{}, map[string][]string{"docs": docs}, func(string) {}); err != nil || string(out) != "first\nsecond\n\n" {
+	if out, err := stdoutOf(tk.run(t.Context(), map[string]any{}, map[string][]string{"docs": docs}, func(string) {})); err != nil || out != "first\nsecond\n\n" {
 		t.Fatalf("files on stdin, joined elsewhere: %q %v", out, err)
 	}
 
@@ -450,7 +470,70 @@ func TestScriptsGetValuesTheirOwnWay(t *testing.T) {
 	}
 	values := map[string]any{"opt": "-x", "env": "/tmp/rc", "need": []any{"n"}}
 	args, problems := tk.check(values)
-	if out, err := tk.run(t.Context(), values, args, func(string) {}); len(problems) != 0 || err != nil || string(out) != "[-x]/tmp/rc\n" {
+	if out, err := stdoutOf(tk.run(t.Context(), values, args, func(string) {})); len(problems) != 0 || err != nil || out != "[-x]/tmp/rc\n" {
 		t.Errorf("unsafe values: %q %v %v", out, err, problems)
+	}
+}
+
+// A count passes its flag that many times, apart or stacked; inputs in one
+// argument go together row by row; and a flag goes before any argument
+// holding its input.
+func TestCountsAndPairs(t *testing.T) {
+	path := writeTask(t, `for a; do printf '[%s]' "$a"; done`, `{"title": "T",
+		"command": ["./task.sh", "{verbose}", "{quiet}", "{host}:{port}", "{name}.txt", "--set={key}={value}", "{rest}"],
+		"inputs": [
+			{"name": "verbose", "type": "number", "max": 3, "flag": "-v", "count": true},
+			{"name": "quiet", "type": "number", "max": 2, "flag": "-q", "count": true, "stack": true},
+			{"name": "host", "type": "text", "multiple": true, "flag": "-p"},
+			{"name": "port", "type": "number", "multiple": true},
+			{"name": "name", "type": "text", "flag": "-o"},
+			{"name": "key", "type": "text", "multiple": true},
+			{"name": "value", "type": "text", "multiple": true},
+			{"name": "rest", "type": "text", "multiple": true}
+		], "output": {"kind": "text"}}`)
+	tk, err := loadTask(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		values map[string]any
+		want   string
+	}{
+		{map[string]any{"verbose": 3.0, "quiet": 2.0, "host": []any{"a", "b"}, "port": []any{80.0, 443.0}, "name": "report",
+			"key": []any{"x", "y"}, "value": []any{"1", "2"}, "rest": []any{"r"}},
+			"[-v][-v][-v][-qq][-p][a:80][-p][b:443][-o][report.txt][--set=x=1][--set=y=2][r]"},
+		{map[string]any{"verbose": 0.0, "quiet": 0.0, "host": []any{}, "port": []any{}, "rest": []any{"r"}}, "[r]"},
+		{map[string]any{"quiet": 1.0}, "[-q]"},
+	} {
+		args, problems := tk.check(tc.values)
+		if out, err := stdoutOf(tk.run(t.Context(), tc.values, args, func(string) {})); len(problems) != 0 || err != nil || out != tc.want {
+			t.Errorf("%v: %q %v %v", tc.values, out, err, problems)
+		}
+	}
+	for name, tc := range map[string]struct {
+		values map[string]any
+		fields []string
+	}{
+		"rows apart":     {map[string]any{"host": []any{"a", "b"}, "port": []any{80.0}}, []string{"host", "port"}},
+		"a row's half":   {map[string]any{"key": []any{"x"}}, []string{"key", "value"}},
+		"count too high": {map[string]any{"verbose": 4.0}, []string{"verbose"}},
+		"count in parts": {map[string]any{"verbose": 1.5}, []string{"verbose"}},
+		"count below 0":  {map[string]any{"verbose": -1.0}, []string{"verbose"}},
+		"flag's dash":    {map[string]any{"name": "-rf"}, []string{"name"}},
+	} {
+		if _, problems := tk.check(tc.values); !slices.Equal(slices.Sorted(maps.Keys(problems)), tc.fields) {
+			t.Errorf("%s: %v", name, problems)
+		}
+	}
+	// Recipients fill in the pairs as rows, and see a count's whole numbers from none.
+	shown := tk.public()
+	if !reflect.DeepEqual(shown.Pairs, [][]string{{"host", "port"}, {"key", "value"}}) || shown.Inputs[0].Min != 0.0 || shown.Inputs[0].Step != 1 {
+		t.Fatalf("%+v", shown)
+	}
+	// Two arguments sharing an input make one group of all three.
+	tk, err = loadTask(writeTask(t, "", `{"title": "T", "command": ["./task.sh", "{a}={b}", "{b}:{c}"], "inputs": [
+		{"name": "c", "type": "text", "multiple": true}, {"name": "b", "type": "text", "multiple": true}, {"name": "a", "type": "text", "multiple": true}]}`))
+	if err != nil || !reflect.DeepEqual(tk.pairs(), [][]string{{"c", "b", "a"}}) {
+		t.Fatalf("%v %v", err, tk)
 	}
 }
