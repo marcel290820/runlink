@@ -530,6 +530,23 @@ func TestFileInputs(t *testing.T) {
 	}
 }
 
+// How inputs reach the command stays on the owner's machine.
+func TestRecipientsDoNotSeeHowInputsArePassed(t *testing.T) {
+	tk, err := loadTask(writeTask(t, "", `{"title": "T", "command": ["./task.sh", "{a}"], "inputs": [
+		{"name": "a", "type": "text", "flag": "--a"}, {"name": "b", "type": "text", "env": "B"}, {"name": "c", "type": "text", "stdin": true}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const id = "12345678-1234-4234-8234-123456789abc"
+	secret := key()
+	b := direct(t, newSharer(t.Context(), tk, id, secret, plainView(io.Discard)))
+	b.authenticate(t, secret, id, "", "")
+	def, ok := b.accepted(t)
+	if !ok || len(def.Inputs) != 3 || slices.ContainsFunc(def.Inputs, func(in input) bool { return in.binding != binding{} }) || tk.Inputs[0].Flag != "--a" {
+		t.Fatalf("recipients got %+v", def)
+	}
+}
+
 // A script's stderr can echo recipient input; it reaches the owner's terminal
 // with control characters escaped, one entry per line.
 func TestOwnerLogEscapesControlCharacters(t *testing.T) {

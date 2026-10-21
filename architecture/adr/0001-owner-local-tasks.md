@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted. Recorded 2026-10-02.
+Accepted. Recorded 2026-10-02. [ADR 0010](0010-input-passing.md) supersedes how
+typed fields reach the command.
 
 ## Context
 

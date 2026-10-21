@@ -177,17 +177,18 @@ func TestGuidedFirstShare(t *testing.T) {
 	c.await(t, "greet.sh has no task file yet")
 	// A title replacing the suggestion, no description, an owner, then a text
 	// input and a choice whose options are first left out.
-	c.press(t, "Greet someone\r\rDana\r"+"y"+"Your name\rname\r\r\r"+"y"+"Tone\r\rc\r\r")
+	c.press(t, "Greet someone\r\rDana\r"+"y"+"Your name\rname\r\r\r\r"+"y"+"Tone\r\rc\r\r")
 	c.await(t, "Options are needed for a choice.")
 	// Optional; no more inputs; text output with a label; the default timeout; progress.
-	c.press(t, "warm, formal\r"+"n"+"\r"+"\ra greeting\r"+"\r"+"y")
+	c.press(t, "warm, formal\r"+"n"+"\r"+"\r"+"\ra greeting\r"+"\r"+"y")
 	c.await(t, "Share now?")
 	for _, shown := range []string{
-		"Inputs        name         text, required · Your name",
-		"tone         choice of warm, formal · Tone",
+		"Inputs        name         text, required, argument · Your name",
+		"tone         choice of warm, formal, argument · Tone",
 		"( None | warm | formal )  optional",
 		"[ Run ]  You'll get a greeting · on Dana's machine",
-		"Runs  ./greet.sh {name} {tone}, with the values as JSON on stdin too",
+		"Runs  ./greet.sh {name} [{tone}]",
+		"Stdin the values as JSON",
 		"Saves " + stored + "; change it by hand or with runlink share --edit " + script,
 	} {
 		c.await(t, shown)
@@ -240,6 +241,82 @@ func TestGuidedFirstShare(t *testing.T) {
 	exited(t, done, 0)
 }
 
+// The setup asks how the script takes each input, and the run passes each one
+// so: options before arguments, a variable, and a line of stdin. --edit
+// suggests the same answers, so Enter through it saves the file unchanged.
+func TestSetupAsksHowEachInputIsPassed(t *testing.T) {
+	t.Setenv("TOKEN", "the owner's")
+	stack := startStack(t)
+	stubClipboard(t)
+	script := writeScript(t, "tool.sh", `for a; do printf '[%s]' "$a"; done; echo; echo "TOKEN=${TOKEN-unset}"; cat`)
+	env := terminalEnv(stack.Frontend)
+
+	c := newConsole(t)
+	done := c.share(t.Context(), env, script)
+	c.await(t, "tool.sh has no task file yet")
+	c.press(t, "\r\r\r"+"y"+"Name\r\r\r\r\r") // a required argument
+	c.await(t, "name         text, required, argument · Name")
+	c.press(t, "y"+"Verbose\r\rb\r\r\r") // a boolean, passed as --verbose when on
+	c.await(t, "verbose      boolean, --verbose · Verbose")
+	c.press(t, "y"+"Dest\r\r\rno\r\r") // an optional option
+	c.await(t, "dest         text, --dest · Dest")
+	c.press(t, "y"+"Token\r\r\rnv\r\r") // an optional variable
+	c.await(t, "token        text, $TOKEN · Token")
+	c.press(t, "y"+"Note\r\r\rns\r") // a line of stdin
+	c.await(t, "note         text, stdin · Note")
+	c.press(t, "\r"+"\r\r\r\r")
+	runs := "Runs  [TOKEN={token}] ./tool.sh [--verbose] [--dest {dest}] {name}"
+	c.await(t, runs)
+	c.await(t, "Stdin {note}")
+	c.press(t, "\r")
+	c.await(t, "Sharing")
+	stored, err := os.ReadFile(storedPath(script))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `"command": ["./tool.sh", "{verbose}", "{dest}", "{name}"],` + "\n" + `  "inputs": [` + "\n" +
+		`    { "name": "name", "type": "text", "label": "Name", "required": true },` + "\n" +
+		`    { "name": "verbose", "type": "boolean", "label": "Verbose", "flag": "--verbose" },` + "\n" +
+		`    { "name": "dest", "type": "text", "label": "Dest", "flag": "--dest" },` + "\n" +
+		`    { "name": "token", "type": "text", "label": "Token", "env": "TOKEN" },` + "\n" +
+		`    { "name": "note", "type": "text", "label": "Note", "stdin": true }` + "\n  ],"
+	if !strings.Contains(string(stored), want) {
+		t.Fatalf("stored:\n%s", stored)
+	}
+	b, got := recipient(t, c.screen())
+	if strings.Contains(got, "flag") || strings.Contains(got, "TOKEN") || strings.Contains(got, "stdin") {
+		t.Fatalf("recipients got %s", got)
+	}
+	if _, output, failure := b.run(t, map[string]any{"name": "Ada", "verbose": true, "dest": "/tmp/x", "note": "hello"}); failure != nil ||
+		output != "[--verbose][--dest][/tmp/x][Ada]\nTOKEN=unset\nhello\n" {
+		t.Fatalf("output %q, failure %+v", output, failure)
+	}
+	c.press(t, "\x03")
+	exited(t, done, 0)
+
+	// A second way in, written by hand, stays through --edit.
+	stored = []byte(strings.Replace(string(stored), `"env": "TOKEN" }`, `"env": "TOKEN", "stdin": true }`, 1))
+	if err := os.WriteFile(storedPath(script), stored, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c = newConsole(t)
+	done = c.share(t.Context(), env, "--edit", script)
+	c.await(t, "Editing")
+	// Each input: keep, label, name, type, required unless a switch, passed as,
+	// and its option, flag or variable.
+	c.press(t, "\r\r\r"+strings.Repeat("\r", 6)+strings.Repeat("\r", 6)+strings.Repeat("\r", 7)+strings.Repeat("\r", 7)+strings.Repeat("\r", 6)+"\r"+"\r\r\r\r")
+	c.await(t, "Share now?")
+	c.await(t, runs)
+	c.await(t, "Stdin {token} {note}, a line each")
+	c.press(t, "\r")
+	c.await(t, "Sharing")
+	if again, err := os.ReadFile(storedPath(script)); err != nil || string(again) != string(stored) {
+		t.Fatalf("--edit changed the file to:\n%s %v", again, err)
+	}
+	c.press(t, "\x03")
+	exited(t, done, 0)
+}
+
 // Ctrl-C during the setup writes nothing; --edit suggests the stored answers,
 // keeps what it does not ask about, and saves the changes; a broken stored file
 // is reported, never asked over.
@@ -276,7 +353,7 @@ func TestGuidedSetupCancelEditAndErrors(t *testing.T) {
 	c.await(t, "Title         Echo")
 	// A new title; the first input renamed, the second, without a label and with
 	// options no list of text could hold, kept as it is; a five-second timeout.
-	c.press(t, "Echo it\r\r\r"+"\r"+"\rwords\r\r\r"+"\r"+"\r\r\r\r\r"+"\r"+"\r\r"+"5\r"+"\r")
+	c.press(t, "Echo it\r\r\r"+"\r"+"\rwords\r\r\r\r"+"\r"+"\r\r\r\r\r\r"+"\r"+"\r\r"+"5\r"+"\r")
 	c.await(t, "Runs  ./echo.sh {words} {pick}")
 	c.press(t, "\r")
 	c.await(t, "Sharing")

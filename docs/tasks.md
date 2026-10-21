@@ -41,13 +41,14 @@ gets `backup.runlink.json`, leaving `backup.json` free. Every question has a
 suggestion, so pressing Enter through them shares a task without inputs that
 shows stdout as text. The questions follow the task file below: title,
 description, owner, then inputs one at a time (label, name, type, options for a
-choice, and whether it is required), the output's kind and label, the timeout,
-and progress. Lists take the arrow keys or an option's first letter; a wrong
-answer is explained under the question until you fix it. Before anything is
-saved, `share` shows the form as recipients will see it and the command it will
-run: the script with each input as an argument, in order, and all values as JSON
-on stdin. Enter saves and shares, `e` goes through the answers again, and Ctrl-C
-at any point stops without writing anything.
+choice, whether it is required, and how the script takes it, as
+[Input](#input) lists), the output's kind and label, the timeout, and progress.
+Lists take the arrow keys or an option's first letter; a wrong answer is
+explained under the question until you fix it. Before anything is saved, `share`
+shows the form as recipients will see it and how the script will get the values:
+the command, with options before positional arguments and in brackets what a run
+can leave out, and what goes to stdin. Enter saves and shares, `e` goes through
+the answers again, and Ctrl-C at any point stops without writing anything.
 
 Later shares load the saved file without asking. `--edit` asks again with the
 saved answers as suggestions and keeps the fields it does not ask about, such as
@@ -70,10 +71,12 @@ A task file is one JSON object, at most 64 KiB, with only these fields:
   "title": "Greet someone",
   "description": "Writes a greeting on the owner's machine.",
   "owner": "Dana",
-  "command": ["./greet.sh", "{name}", "--tone={tone}"],
+  "command": ["./greet.sh", "{tone}", "{loud}", "{name}"],
   "inputs": [
     { "name": "name", "type": "text", "label": "Name", "required": true, "maxLength": 60 },
-    { "name": "tone", "type": "choice", "options": ["warm", "formal"], "default": "warm" }
+    { "name": "tone", "type": "choice", "options": ["warm", "formal"], "default": "warm", "flag": "--tone" },
+    { "name": "loud", "type": "boolean", "flag": "--loud" },
+    { "name": "sign", "type": "text", "label": "Signed by", "env": "SIGNATURE" }
   ],
   "output": { "kind": "text", "label": "a greeting" },
   "timeout": 10,
@@ -85,7 +88,7 @@ A task file is one JSON object, at most 64 KiB, with only these fields:
 | --- | --- |
 | `title`, `description`, `owner` | What recipients see; `owner` makes the page say "Dana's machine" |
 | `command` | The program and its arguments, run without a shell from the task file's directory; a relative program path starts there too. Only arguments take input; the program is fixed |
-| `inputs` | Form fields, as [gui.js](../internal/frontend/assets/gui.js) documents: `text`, `multiline`, `number`, `date`, `boolean`, `choice`, `file` |
+| `inputs` | Form fields, as [gui.js](../internal/frontend/assets/gui.js) documents: `text`, `multiline`, `number`, `date`, `boolean`, `choice`, `file`; `flag`, `env` and `stdin` say how a value reaches the script, as [Input](#input) explains, and recipients never see them |
 | `output` | `kind` `text` or `json` shows stdout; `file` offers stdout as a download named `name`; without `output`, recipients see only that the run finished |
 | `timeout` | Seconds from accepting a run, including receiving its files, until the run and every process it started are killed; default 60, at most 3600 |
 | `progress` | Show each stderr line to recipients while the task runs; off by default. A recipient whose connection cannot keep up misses lines instead of slowing the task |
@@ -100,14 +103,45 @@ The runner checks every value against its field before running anything: type,
 `required`, `maxLength`, `min`, `max`, `step`, dates, choice options, and file
 names and sizes. A problem shows on the recipient's field and nothing runs.
 
-Each value reaches the script two ways:
+Each value reaches the script the way the script takes it:
 
-- `{name}` anywhere in a `command` argument is replaced by the value: numbers in
-  plain decimal, booleans as `true` or `false`, an absent optional value as empty
-  text. Each argument stays one argument, and replacement happens once, so a value
-  containing braces stays literal. A text value filling a whole argument may not
-  start with `-`, so it cannot become an option; write `--name={name}` to allow it.
-- stdin carries all values as one JSON object, absent optional values left out.
+| The script reads | The task file says | A run passes |
+| --- | --- | --- |
+| A positional argument, as `$1` | `"{name}"` in `command` | `Ada` |
+| An option and its value | `"{name}"` in `command`, and `"flag": "--name"` | `--name Ada` |
+| An option joined to its value | `"flag": "--name="`, or `"--name={name}"` in `command` | `--name=Ada` |
+| A flag | a boolean with `"flag": "--loud"` | `--loud` when on, nothing when off |
+| Part of an argument | `"out-{day}.csv"` in `command` | `out-2026-10-21.csv` |
+| An environment variable | `"env": "NAME"` | `NAME=Ada` for the run |
+| A line of stdin, as a prompt reads it | `"stdin": true` | `Ada` and a newline |
+| A file on stdin | a file with `"stdin": true` | the file's contents |
+| JSON on stdin | nothing more | `{"name":"Ada"}`, when no input has `stdin` |
+
+- `{name}` is replaced once in each argument, so a value containing braces stays
+  literal: numbers in plain decimal, booleans as `true` or `false`, a file as the
+  path below. Arguments run in the order `command` lists them; the setup puts
+  options first, as `getopts` and Go's `flag` package need.
+- An absent optional value leaves its argument out, with its flag. A lone
+  `{name}` without a flag stays as empty text while a later positional argument
+  is passed, so that one keeps its place: `./greet.sh "" Ada`. A variable is unset, even when
+  your shell sets it, and a stdin line is empty.
+- A text value that starts an argument, alone, after a separate flag, or before
+  more text as in `{name}.txt`, may not start with `-`, so it cannot become an
+  option. A flag ending in `=`, or a `--` argument before it in `command`,
+  allows it. A run that would still start an argument with `-` from a value
+  fails without running.
+- Inputs with `stdin` go one line each, in order; a value already ending in a
+  newline gets no other. A file takes stdin alone. Without `stdin`, stdin carries
+  all values as one JSON object, absent optional values left out; with it, every
+  other input must reach the script through `command` or `env`.
+- A variable is recipient text in every program the script starts, so name one
+  only the script reads. Names that change how programs start, such as `PATH`,
+  `IFS`, `BASH_ENV`, `NODE_OPTIONS`, `PYTHONPATH` and those starting with `LD_`
+  or `DYLD_`, are refused.
+
+Not covered yet: several values for one input, such as a list of files or a
+repeated option, which needs a list field on the page; a flag that becomes
+`--no-name` when off; and fixed variables for every run, which the script can set.
 
 A file input's value is the path of the recipient's file, stored under its own
 name in a new private directory and deleted with it when the run ends. `maxBytes`

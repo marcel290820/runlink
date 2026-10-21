@@ -32,6 +32,14 @@ func TestLoadTaskRejectsInvalidFiles(t *testing.T) {
 		"number bound":     `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "number", "min": "1"}]}`,
 		"date bound":       `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "date", "max": "2026-02-30"}]}`,
 		"bad default":      `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "choice", "options": ["x"], "default": "y"}]}`,
+		"flag unplaced":    `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "text", "flag": "--a"}]}`,
+		"flag in text":     `{"title": "T", "command": ["./task.sh", "x{a}"], "inputs": [{"name": "a", "type": "text", "flag": "--a"}]}`,
+		"env name":         `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "text", "env": "1A"}]}`,
+		"env PATH":         `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "text", "env": "PATH"}]}`,
+		"env loader":       `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "text", "env": "LD_PRELOAD"}]}`,
+		"env twice":        `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "text", "env": "A"}, {"name": "b", "type": "text", "env": "A"}]}`,
+		"file stdin":       `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "file", "stdin": true}, {"name": "b", "type": "text", "stdin": true}]}`,
+		"unplaced input":   `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "a", "type": "text", "stdin": true}, {"name": "b", "type": "text"}]}`,
 	} {
 		if _, err := loadTask(writeTask(t, "", file)); err == nil {
 			t.Errorf("%s: accepted", name)
@@ -206,5 +214,85 @@ func TestLinesSplitsAndBounds(t *testing.T) {
 	l.flush()
 	if len(got) != 4 || got[0] != "one" || got[1] != "two" || len(got[2]) != 4096 || len(got[3]) != 904 {
 		t.Fatalf("%q", got)
+	}
+}
+
+// Each input reaches the script as the task file says: as an argument, an
+// option, a flag, a variable, or a line of stdin. An absent value leaves its
+// argument and variable out.
+func TestInputsReachTheScriptAsItTakesThem(t *testing.T) {
+	t.Setenv("TOKEN", "the owner's")
+	tk, err := loadTask(writeTask(t, `for a; do printf '[%s]' "$a"; done; echo; echo "TOKEN=${TOKEN-unset}"; cat`, `{"title": "T",
+		"command": ["./task.sh", "{verbose}", "{color}", "{dest}", "--level={level}", "{first}", "{second}", "{third}"],
+		"inputs": [
+			{"name": "verbose", "type": "boolean", "flag": "-v"},
+			{"name": "color", "type": "boolean", "flag": "--color="},
+			{"name": "dest", "type": "text", "flag": "--dest"},
+			{"name": "level", "type": "number"},
+			{"name": "first", "type": "text"}, {"name": "second", "type": "text"}, {"name": "third", "type": "text"},
+			{"name": "token", "type": "text", "env": "TOKEN"},
+			{"name": "note", "type": "text", "stdin": true}, {"name": "more", "type": "multiline", "stdin": true}
+		], "output": {"kind": "text"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		values map[string]any
+		want   string
+	}{
+		{map[string]any{"verbose": true, "color": false, "dest": "/tmp/out", "level": 3.0, "first": "a", "second": "b", "third": "c",
+			"token": "s3cret", "note": "hi", "more": "l1\nl2\n"}, "[-v][--color=false][--dest][/tmp/out][--level=3][a][b][c]\nTOKEN=s3cret\nhi\nl1\nl2\n"},
+		// The first argument holds the second's place; the absent third is left out.
+		{map[string]any{"verbose": false, "color": true, "second": "b"}, "[--color=true][][b]\nTOKEN=unset\n\n\n"},
+	} {
+		args, problems := tk.check(tc.values)
+		if out, err := tk.run(t.Context(), tc.values, args, func(string) {}); len(problems) != 0 || err != nil || string(out) != tc.want {
+			t.Errorf("%v: %q %v %v", tc.values, out, err, problems)
+		}
+	}
+
+	// An empty argument also holds the place of a later one with more text.
+	tk, err = loadTask(writeTask(t, `for a; do printf '[%s]' "$a"; done`, `{"title": "T", "command": ["./task.sh", "{first}", "out-{second}"],
+		"inputs": [{"name": "first", "type": "text"}, {"name": "second", "type": "text"}], "output": {"kind": "text"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out, err := tk.run(t.Context(), map[string]any{"second": "x"}, map[string]string{"second": "x"}, func(string) {}); err != nil || string(out) != "[][out-x]" {
+		t.Errorf("a later argument with more text: %q %v", out, err)
+	}
+
+	// A value that starts an argument, alone, after a separate flag, or before
+	// more text, cannot look like an option; joined to its flag, or after --, it can.
+	tk, err = loadTask(writeTask(t, "", `{"title": "T", "command": ["./task.sh", "{sep}", "{joined}", "{name}.txt", "{a}{b}", "--", "{rest}"], "inputs": [
+		{"name": "sep", "type": "text", "flag": "--sep"}, {"name": "joined", "type": "text", "flag": "--joined="}, {"name": "name", "type": "text"},
+		{"name": "a", "type": "text"}, {"name": "b", "type": "text"}, {"name": "rest", "type": "text"}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, option := range []string{"sep", "name", "a"} {
+		if _, problems := tk.check(map[string]any{option: "-x"}); len(problems) != 1 {
+			t.Errorf("an option-like %s: %v", option, problems)
+		}
+	}
+	if _, problems := tk.check(map[string]any{"joined": "-x", "b": "-y", "rest": "-z"}); len(problems) != 0 {
+		t.Errorf("option-like values that cannot be options: %v", problems)
+	}
+	values := map[string]any{"a": "", "b": "-rf"}
+	args, _ := tk.check(values)
+	if _, err := tk.run(t.Context(), values, args, func(string) {}); err == nil || !strings.Contains(err.Error(), "option") {
+		t.Errorf("an empty value let the next one start an argument: %v", err)
+	}
+
+	// A file marked for stdin gives the script its contents.
+	path := writeTask(t, "cat", `{"title": "T", "command": ["./task.sh"], "inputs": [{"name": "doc", "type": "file", "stdin": true}], "output": {"kind": "text"}}`)
+	if tk, err = loadTask(path); err != nil {
+		t.Fatal(err)
+	}
+	doc := filepath.Join(filepath.Dir(path), "doc.txt")
+	if err := os.WriteFile(doc, []byte("contents\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := tk.run(t.Context(), map[string]any{"doc": doc}, map[string]string{"doc": doc}, func(string) {}); err != nil || string(out) != "contents\n" {
+		t.Fatalf("a file on stdin: %q %v", out, err)
 	}
 }

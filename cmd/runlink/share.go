@@ -388,7 +388,7 @@ func (s *sharer) serve(ch datachannel.ReadWriteCloserDeadliner, pc *webrtc.PeerC
 	unauthenticated.Stop()
 	s.view.connected(1)
 	defer s.view.connected(-1)
-	definition, err := json.Marshal(map[string]any{"definition": s.task.definition})
+	definition, err := json.Marshal(map[string]any{"definition": s.task.public()})
 	if err != nil {
 		return
 	}

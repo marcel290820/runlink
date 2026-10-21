@@ -46,8 +46,18 @@ type input struct {
 	Options     []any   `json:"options,omitempty"`
 	Accept      string  `json:"accept,omitempty"`   // a hint for the file picker
 	MaxBytes    int64   `json:"maxBytes,omitempty"` // a file's size limit
+	binding
 
-	whole bool // the input fills a whole command argument
+	whole bool   // the value can start a command argument
+	how   string // the setup's answer for how the script gets it
+}
+
+// binding is how an input reaches the command besides its placeholders, which
+// recipients never see.
+type binding struct {
+	Flag  string `json:"flag,omitempty"`  // passes a lone {name} as flag and value
+	Env   string `json:"env,omitempty"`   // a variable set to the value
+	Stdin bool   `json:"stdin,omitempty"` // the value, or a file's contents, on stdin
 }
 
 type output struct {
@@ -77,6 +87,7 @@ const (
 
 var (
 	inputName   = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`)
+	envName     = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	placeholder = regexp.MustCompile(`\{([A-Za-z_][A-Za-z0-9_]*)\}`)
 )
 
@@ -159,24 +170,63 @@ func (t *task) parse(data []byte) error {
 	case t.Output != nil && t.Output.Name != "" && !plainName(t.Output.Name):
 		return errors.New("output name must be a plain file name")
 	}
-	whole := map[string]bool{}
+	// After --, an argument cannot be an option.
+	used, lone, whole := map[string]bool{}, map[string]bool{}, map[string]bool{}
+	dashes := false
 	for _, arg := range t.Command[1:] {
-		if m := placeholder.FindStringSubmatch(arg); m != nil && m[0] == arg {
-			whole[m[1]] = true
+		dashes = dashes || arg == "--"
+		for _, m := range placeholder.FindAllStringSubmatchIndex(arg, -1) {
+			name := arg[m[2]:m[3]]
+			used[name], lone[name] = true, lone[name] || m[1]-m[0] == len(arg)
+			whole[name] = whole[name] || m[0] == 0 && !dashes
 		}
 	}
-	seen := map[string]bool{}
+	seen, envs, stdin, files := map[string]bool{}, map[string]bool{}, 0, 0
 	for i := range t.Inputs {
 		in := &t.Inputs[i]
 		if !inputName.MatchString(in.Name) || seen[in.Name] {
 			return fmt.Errorf("input %d needs a unique name of letters, digits and _", i+1)
 		}
-		seen[in.Name], in.whole = true, whole[in.Name]
+		seen[in.Name], in.whole = true, whole[in.Name] && !strings.HasSuffix(in.Flag, "=")
 		if err := in.validate(); err != nil {
 			return fmt.Errorf("input %s: %w", in.Name, err)
 		}
+		switch {
+		case in.Flag != "" && !lone[in.Name]:
+			return fmt.Errorf("input %s: a flag needs {%[1]s} as a whole argument of command", in.Name)
+		case in.Env != "" && !envName.MatchString(in.Env):
+			return fmt.Errorf("input %s: env must be letters, digits and _, not starting with a digit", in.Name)
+		case in.Env != "" && unsafeEnv(in.Env):
+			return fmt.Errorf("input %s: %s changes how programs start, so recipient text cannot set it", in.Name, in.Env)
+		case envs[in.Env]:
+			return fmt.Errorf("input %s: another input sets %s", in.Name, in.Env)
+		}
+		envs[in.Env] = in.Env != ""
+		if in.Stdin {
+			stdin++
+		}
+		if in.Stdin && in.Type == "file" {
+			files++
+		}
+	}
+	if files > 0 && stdin > 1 {
+		return errors.New("a file on stdin takes it alone; pass the other inputs another way")
+	}
+	for _, in := range t.Inputs {
+		if stdin > 0 && !used[in.Name] && in.Env == "" && !in.Stdin {
+			return fmt.Errorf("input %s reaches the script nowhere: stdin carries other inputs instead of the JSON", in.Name)
+		}
 	}
 	return nil
+}
+
+// unsafeEnv reports whether a variable changes how a shell, an interpreter, or
+// the loader starts a program.
+// ponytail: the usual suspects, not every tool's; the docs say to name a variable only the script reads.
+func unsafeEnv(name string) bool {
+	return slices.Contains([]string{"PATH", "IFS", "ENV", "BASH_ENV", "SHELLOPTS", "BASHOPTS", "PS4", "PROMPT_COMMAND",
+		"NODE_OPTIONS", "PYTHONPATH", "PYTHONSTARTUP", "PYTHONHOME", "PERL5OPT", "PERL5LIB", "RUBYOPT", "RUBYLIB"}, name) ||
+		strings.HasPrefix(name, "LD_") || strings.HasPrefix(name, "DYLD_")
 }
 
 // validate checks what the runner enforces; gui.js checks the rest of the spec.
@@ -256,7 +306,7 @@ func isDate(v any) bool {
 func (t *task) check(values map[string]any) (args, problems map[string]string) {
 	args, problems = map[string]string{}, map[string]string{}
 	for name := range values {
-		if !slices.ContainsFunc(t.Inputs, func(in input) bool { return in.Name == name }) {
+		if t.input(name) == nil {
 			problems[name] = "This task has no such field."
 		}
 	}
@@ -292,7 +342,7 @@ func (in *input) check(value any) (text, problem string) {
 		case strings.ContainsRune(s, 0):
 			return "", "Remove the null character."
 		case in.whole && strings.HasPrefix(s, "-"):
-			// A whole argument starting with - would reach the command as an option.
+			// An argument starting with - would reach the command as an option.
 			return "", "Don't start with -."
 		}
 		return s, ""
@@ -390,31 +440,140 @@ func (e *runError) Error() string {
 	return "Sharing stopped."
 }
 
-// run executes the command with placeholders replaced by args and the values as
-// JSON on stdin, and returns its bounded stdout. Each stderr line goes to line.
-// The command and everything it starts run in one process group, which ctx's end
+func (t *task) input(name string) *input {
+	if i := slices.IndexFunc(t.Inputs, func(in input) bool { return in.Name == name }); i >= 0 {
+		return &t.Inputs[i]
+	}
+	return nil
+}
+
+// public is the definition recipients get, without how inputs reach the command.
+func (t *task) public() definition {
+	d := t.definition
+	d.Inputs = slices.Clone(d.Inputs)
+	for i := range d.Inputs {
+		d.Inputs[i].binding = binding{}
+	}
+	return d
+}
+
+// argv is the command line for checked values, args holding each one's text.
+// The program is fixed; only its arguments take values, in one pass so a
+// value's own braces stay literal. An argument whose value is absent is left
+// out, but a lone {name} passed alone stays as empty text while a later
+// positional argument is passed, so that one keeps its place.
+func (t *task) argv(args map[string]string) ([]string, error) {
+	argv, holes, dashes := []string{t.Command[0]}, []int{}, false
+	for _, arg := range t.Command[1:] {
+		dashes = dashes || arg == "--"
+		if m := placeholder.FindStringSubmatch(arg); m != nil && m[0] == arg {
+			if in := t.input(m[1]); in != nil {
+				value, ok := args[in.Name]
+				switch {
+				case in.Flag == "" && ok:
+					argv, holes = append(argv, value), holes[:0]
+				case in.Flag == "":
+					argv, holes = append(argv, ""), append(holes, len(argv))
+				case !ok:
+				case strings.HasSuffix(in.Flag, "="):
+					argv = append(argv, in.Flag+value)
+				case in.Type == "boolean":
+					if value == "true" {
+						argv = append(argv, in.Flag)
+					}
+				default:
+					argv = append(argv, in.Flag, value)
+				}
+				continue
+			}
+		}
+		absent, template := false, arg
+		arg = placeholder.ReplaceAllStringFunc(arg, func(m string) string {
+			name := m[1 : len(m)-1]
+			if t.input(name) == nil {
+				return m
+			}
+			value, ok := args[name]
+			absent = absent || !ok
+			return value
+		})
+		if !absent && !dashes && !strings.HasPrefix(template, "-") && strings.HasPrefix(arg, "-") {
+			// check refuses such text where a value starts the argument; an
+			// empty one before more text could still make an option.
+			return nil, &runError{Code: "failed", Message: "A value would have made an option of an argument."}
+		}
+		if !absent {
+			argv = append(argv, arg)
+		}
+		if !absent && (!strings.HasPrefix(template, "-") || dashes && template != "--") {
+			holes = holes[:0] // a positional argument, not an option
+		}
+	}
+	for _, i := range slices.Backward(holes) {
+		argv = slices.Delete(argv, i, i+1)
+	}
+	return argv, nil
+}
+
+// stdin is what the command reads: the inputs marked for it, a file's contents
+// or each value on a line of its own, or else all values as one JSON object.
+func (t *task) stdin(values map[string]any, args map[string]string) (io.Reader, error) {
+	var text strings.Builder
+	marked := false
+	for _, in := range t.Inputs {
+		switch value, ok := args[in.Name]; {
+		case !in.Stdin:
+		case in.Type == "file" && ok:
+			return os.Open(value)
+		case in.Type == "file":
+			marked = true // an absent file is empty stdin
+		default:
+			marked = true
+			if text.WriteString(value); !strings.HasSuffix(value, "\n") {
+				text.WriteByte('\n')
+			}
+		}
+	}
+	if marked {
+		return strings.NewReader(text.String()), nil
+	}
+	data, err := json.Marshal(values)
+	return bytes.NewReader(data), err
+}
+
+// run executes the command for checked values, with args holding each one's
+// text, and returns its bounded stdout. Each stderr line goes to line. The
+// command and everything it starts run in one process group, which ctx's end
 // or the timeout kills.
 func (t *task) run(ctx context.Context, values map[string]any, args map[string]string, line func(string)) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, t.timeout())
 	defer cancel()
-	// The program is fixed; only its arguments take values, in one pass so a
-	// value's own braces stay literal.
-	argv := slices.Clone(t.Command)
-	for i, arg := range argv[1:] {
-		argv[i+1] = placeholder.ReplaceAllStringFunc(arg, func(m string) string {
-			name := m[1 : len(m)-1]
-			if slices.ContainsFunc(t.Inputs, func(in input) bool { return in.Name == name }) {
-				return args[name] // empty for an absent optional input
-			}
-			return m
-		})
+	stdin, err := t.stdin(values, args)
+	if err != nil {
+		return nil, err
 	}
-	stdin, err := json.Marshal(values)
+	if f, ok := stdin.(*os.File); ok {
+		defer f.Close()
+	}
+	argv, err := t.argv(args)
 	if err != nil {
 		return nil, err
 	}
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	cmd.Dir, cmd.Stdin = t.dir, bytes.NewReader(stdin)
+	cmd.Dir, cmd.Stdin = t.dir, stdin
+	for _, in := range t.Inputs {
+		if in.Env == "" {
+			continue
+		}
+		// An absent value leaves the variable unset, even if the owner's shell sets it.
+		if cmd.Env == nil {
+			cmd.Env = cmd.Environ() // with PWD as Dir
+		}
+		cmd.Env = slices.DeleteFunc(cmd.Env, func(kv string) bool { return strings.HasPrefix(kv, in.Env+"=") })
+		if value, ok := args[in.Name]; ok {
+			cmd.Env = append(cmd.Env, in.Env+"="+value)
+		}
+	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	cmd.WaitDelay = time.Second

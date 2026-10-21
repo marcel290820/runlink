@@ -25,6 +25,7 @@ Decisions live in `adr/NNNN-short-title.md`, using Status, Context, Decision, an
 | [0007](adr/0007-local-shipping-foundation.md) | Locally verified tooling, trusted ingress, and signed deployment foundation | Accepted |
 | [0008](adr/0008-local-first-proof-of-concept.md) | Local-first proof of concept with infrastructure stand-ins | Accepted |
 | [0009](adr/0009-poc-signaling-and-peer-authentication.md) | Proof-of-concept signaling and peer authentication | Accepted; review pending |
+| [0010](adr/0010-input-passing.md) | Inputs reach a script the way it takes them | Accepted |
 
 ## Container view
 
