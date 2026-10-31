@@ -31,20 +31,33 @@ body { display: block; width: 1280px; min-height: 0; padding-bottom: 64px; }
 h2.say { margin: 0 var(--gutter); font-size: 38px; font-weight: 780; font-stretch: 112.5%; letter-spacing: -.035em; line-height: 1.1; }
 .coworker, .snag, .step { margin: 0; font-size: 18px; font-weight: 700; font-stretch: 112.5%; letter-spacing: -.015em; line-height: 26px; }
 
-/* Today: three routes leave the coworker for the script and fray before they reach it. */
+/* Today: four routes leave your machine for the coworker and fray at a wall, each
+   wall showing the moment it hurts. */
 .today { margin-top: 88px; }
-.routes { position: relative; height: 226px; margin: 36px var(--gutter) 0; }
-.coworker { position: absolute; top: 100px; left: 0; display: flex; align-items: center; gap: 18px; }
-.coworker::after { content: ""; width: 16px; height: 16px; border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 5px var(--paper), 0 0 0 6px var(--edge); }
-.snag { position: absolute; left: 600px; padding-left: 20px; }
-.snag::before { content: ""; position: absolute; top: 2px; bottom: 2px; left: 0; width: 5px; border-radius: 3px;
-  background: repeating-linear-gradient(-45deg, var(--ink) 0 2.5px, transparent 2.5px 5px); }
-.snag:nth-child(2) { top: 0; }
-.snag:nth-child(3) { top: 100px; }
-.snag:nth-child(4) { top: 200px; }
-.box { position: absolute; top: 50%; right: 0; width: 224px; translate: 0 -50%; }
+.routes { display: grid; grid-template-columns: 216px 1fr 480px 150px; margin: 44px var(--gutter) 0; }
+/* Outside the bench, the bench's grid placements do not apply. */
+.routes > * { grid-row: 1; align-self: center; }
+.routes > .box { grid-column: 1; }
 .box .readings, .term .readings { padding: 22px 24px 24px; }
 .box .mono, .term .cmd { margin-top: 12px; font-weight: 500; color: var(--core-ink); }
+.ends { grid-column: 3; display: grid; gap: 36px; }
+.end { position: relative; display: grid; justify-items: start; gap: 12px; padding-left: 24px; }
+.end::before { content: ""; position: absolute; top: 2px; bottom: 2px; left: 0; width: 5px; border-radius: 3px;
+  background: repeating-linear-gradient(-45deg, var(--ink) 0 2.5px, transparent 2.5px 5px); }
+.coworker { grid-column: 4; justify-self: end; white-space: nowrap; display: grid; justify-items: center; gap: 12px; }
+.coworker::before { content: ""; width: 16px; height: 16px; border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 5px var(--paper), 0 0 0 6px var(--edge); }
+.end ol, .end ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.trace { gap: 2px; font: 450 13.5px/1.65 var(--mono); font-stretch: 87.5%; color: var(--muted); white-space: nowrap; }
+.trace li::before { content: attr(data-t); margin-right: 1.6ch; opacity: .65; }
+.trace li:last-child { color: var(--ink); font-weight: 500; }
+.chat li { display: flex; align-items: center; gap: 12px; font-size: 15.5px; }
+.chat li::before { content: attr(data-t); flex: none; width: 66px; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.chat span { padding: 6px 13px; border-radius: 15px 15px 15px 5px; background: var(--well); color: var(--ink); }
+.chat .key { border-radius: 15px 15px 5px 15px; background: var(--ink); color: var(--paper); font: 500 13.5px/1.5 var(--mono); font-stretch: 87.5%; }
+.chat .key i { font-style: normal; }
+.todo { display: flex !important; gap: 20px; font-size: 15.5px; color: var(--muted); }
+.todo li { display: flex; align-items: center; gap: 8px; }
+.todo li::before { content: ""; width: 13px; height: 13px; border-radius: 4px; box-shadow: inset 0 0 0 1.5px var(--edge); }
 
 /* With runlink: one command on the owner's machine, one link, the task in a browser. */
 .with { margin-top: 96px; }
@@ -82,16 +95,23 @@ h2.say { margin: 0 var(--gutter); font-size: 38px; font-weight: 780; font-stretc
 </div>
 
 <section class="today">
-<h2 class="say">A script that works is still hard to share.</h2>
+<h2 class="say">It works on your machine. Nowhere else.</h2>
 <div class="routes">
-<p class="coworker">Your coworker</p>
-<p class="snag">Install it on their laptop</p>
-<p class="snag">Wait for you to run it</p>
-<p class="snag">Build an app around it</p>
 <section class="machine box"><div class="etch"></div><div class="readings">
 <h3 class="who">Your machine</h3>
 <p class="mono">export-invoices.py</p>
 </div></section>
+<div class="ends">
+<div class="end"><p class="snag">Get it running on their laptop</p>
+<ol class="trace mono"><li data-t="09:12">command not found: python3</li><li data-t="09:47">No module named 'pandas'</li><li data-t="11:05">ERROR: Failed building wheel for reportlab</li></ol></div>
+<div class="end"><p class="snag">Send them your API key</p>
+<ul class="chat"><li data-t="Tue 10:31"><span class="key">ACCOUNTING_KEY=<i>ak_live_7Hq2xR9vLm4tP</i></span></li></ul></div>
+<div class="end"><p class="snag">Run it for them, every time</p>
+<ul class="chat"><li data-t="Mon 09:14"><span>Can you pull October for Acme?</span></li><li data-t="Wed 16:02"><span>Same for Globex?</span></li><li data-t="Fri 17:51"><span>Sorry, one more...</span></li></ul></div>
+<div class="end"><p class="snag">Build an app for one script</p>
+<ul class="todo"><li>Login</li><li>Hosting</li><li>HTTPS</li><li>Updates</li></ul></div>
+</div>
+<p class="coworker">Your coworker</p>
 </div>
 </section>
 
@@ -146,7 +166,7 @@ h2.say { margin: 0 var(--gutter); font-size: 38px; font-weight: 780; font-stretc
 <script>
 // Paints helix.js's double helix, held still: beads in two strands sized by depth,
 // base pairs between them, ink on the page and nacre inside the machine. Routes that
-// never reach the script fray at their ends; the task's link runs through the machine
+// never reach the coworker fray at their ends; the task's link runs through the machine
 // to the result's pearl. A seeded generator keeps every render the same.
 document.fonts.ready.then(() => {
   const TAU = 2 * Math.PI;
@@ -260,20 +280,20 @@ document.fonts.ready.then(() => {
     }
   }
 
-  // Today: three routes fan out from the coworker and fray short of the script.
-  const start = box(document.querySelector('.coworker'));
-  const from = [start.r - 8, (start.t + start.b) / 2];
-  document.querySelectorAll('.snag').forEach((snag, n) => {
-    const s = box(snag), to = [s.l - 48, (s.t + s.b) / 2], dx = to[0] - from[0];
+  // Today: four routes leave the script and fray at the wall in front of each end.
+  const home = box(document.querySelector('.box'));
+  const from = [home.r - 18, (home.t + home.b) / 2];
+  document.querySelectorAll('.end').forEach((end, n) => {
+    const s = box(end), to = [s.l - 44, (s.t + s.b) / 2], dx = to[0] - from[0];
     const path = walk(from, [from[0] + dx * .4, from[1]], [to[0] - dx * .45, to[1]], to);
-    helix(path, { amp: d => 13 * ramp(0, 70, d), pitch: 140, phase: n * 2.1,
-      fray: d => ramp(path.L - 150, path.L, d) });
-    // What broke off: loose beads ahead of the frayed ends, and the dashed ring of a broken node.
-    const end = path.pts.at(-1);
+    helix(path, { amp: d => 12 * ramp(0, 60, d), pitch: 130, phase: n * 1.7,
+      fray: d => ramp(path.L - 140, path.L, d) });
+    // What broke off: loose beads ahead of the frayed ends.
+    const tip = path.pts.at(-1);
     for (let i = 0; i < 16; i++) {
-      const dist = rand(4, 40), turn = rand(-1.1, 1.1);
-      const x = end.x + (end.tx * Math.cos(turn) - end.ty * Math.sin(turn)) * dist, y = end.y + (end.ty * Math.cos(turn) + end.tx * Math.sin(turn)) * dist;
-      stamp(false, x, y, rand(.6, 1.5), .75 * (1 - dist / 46));
+      const dist = rand(4, 36), turn = rand(-1.1, 1.1);
+      const x = tip.x + (tip.tx * Math.cos(turn) - tip.ty * Math.sin(turn)) * dist, y = tip.y + (tip.ty * Math.cos(turn) + tip.tx * Math.sin(turn)) * dist;
+      stamp(false, x, y, rand(.6, 1.5), .75 * (1 - dist / 42));
     }
   });
 
