@@ -6,7 +6,7 @@ owner's machine. See [VISION](VISION.md), [RATIONALE](RATIONALE.md), and the
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/overview/dark.png">
-  <img src="docs/overview/light.png" alt="It works on your machine. Nowhere else: getting it running on a coworker's laptop ends in install errors, sharing it means sending them your API key, running it for them never stops, and an app for one script means login, hosting, HTTPS, and updates. With runlink, you run runlink share on the script and send the link; your coworker fills in the form in a browser, the script runs on your machine, and they get the result.">
+  <img src="docs/overview/light.png" alt="It works on your machine. Nowhere else: getting it running on a coworker's laptop ends in install errors, sharing it means sending them your API key, running it for them never stops, and an app for one script means login, hosting, HTTPS, and updates. With runlink, you run runlink share on the script and send the link; your coworker fills in the form in a browser, the script runs on your machine with your key, and they get the result.">
 </picture>
 
 This repository contains a locally verified development and shipping foundation

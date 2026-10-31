@@ -68,7 +68,7 @@ h2.say { margin: 0 var(--gutter); font-size: 38px; font-weight: 780; font-stretc
 .term .url { margin-top: 6px; overflow: hidden; white-space: nowrap; color: var(--core-ink); text-decoration: underline 1.5px;
   text-underline-offset: 5px; text-decoration-color: color-mix(in oklab, var(--n2) 70%, transparent);
   mask-image: linear-gradient(to right, #000 55%, transparent 92%); }
-.step { display: flex; align-items: center; gap: 16px; }
+.step { display: flex; align-items: center; gap: 16px; white-space: nowrap; }
 .step::before { content: attr(data-n); display: grid; place-items: center; flex: none; width: 34px; height: 34px;
   border-radius: 50%; background: var(--ink); color: var(--paper); font-size: 16px; font-weight: 800; font-stretch: 125%; }
 .browser { position: relative; margin: 40px var(--gutter) 0; padding: 0 32px 40px; border-radius: 30px; background: var(--lift);
@@ -83,8 +83,8 @@ h2.say { margin: 0 var(--gutter); font-size: 38px; font-weight: 780; font-stretc
 .browser .title { margin-bottom: 36px; font-size: 64px; }
 .steps { display: grid; grid-template-columns: minmax(0, 1fr) var(--link) minmax(300px, 1.1fr) var(--link) minmax(0, 1.15fr); margin: 30px calc(var(--gutter) + 32px) 0; }
 .steps .step:nth-child(1) { grid-column: 1 / 3; }
-.steps .step:nth-child(2) { grid-column: 3; }
-.steps .step:nth-child(3) { grid-column: 5; }
+.steps .step:nth-child(2) { grid-column: 3 / 5; }
+.steps .step:nth-child(3) { grid-column: 5; justify-self: end; }
 </style>
 </head>
 <body>
@@ -157,7 +157,7 @@ h2.say { margin: 0 var(--gutter); font-size: 38px; font-weight: 780; font-stretc
 
 <div class="steps">
 <p class="step" data-n="2">Your coworker fills in the form</p>
-<p class="step" data-n="3">It runs on your machine</p>
+<p class="step" data-n="3">It runs on your machine, with your key</p>
 <p class="step" data-n="4">They get the result</p>
 </div>
 </section>
