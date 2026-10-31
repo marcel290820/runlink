@@ -6,7 +6,7 @@ owner's machine. See [VISION](VISION.md), [RATIONALE](RATIONALE.md), and the
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/overview/dark.png">
-  <img src="docs/overview/light.png" alt="A script that works is still hard to share: a coworker can install it, ask its owner to run it, or wait for an app around it. With runlink, the owner runs runlink share on the script and sends the printed link; the coworker fills in a form in the browser, the script runs on the owner's machine, and the result lands in the browser, encrypted end to end.">
+  <img src="docs/overview/light.png" alt="A script that works is still hard to share: your coworker would have to install it on their laptop, wait for you to run it, or have an app built around it. With runlink, you run runlink share on the script and send the link; your coworker fills in the form in a browser, the script runs on your machine, and they get the result.">
 </picture>
 
 This repository contains a locally verified development and shipping foundation
