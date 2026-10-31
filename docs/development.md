@@ -23,6 +23,7 @@ without installing host packages. The host Python/OpenSSL/C compiler are prerequ
 | `python3 scripts/assets.py` | Regenerate loader approvals, HTML, and asset manifest |
 | `python3 scripts/assets.py --check` | Reject stale generated assets without rewriting them |
 | `scripts/release.sh --help` | Packaging, signing, verification, local deployment, smoke, rollback |
+| `node scripts/overview.mjs` | Render the README's overview images from [overview.html](overview/overview.html); source `scripts/env.sh` first |
 
 Downloads need network access, but application tests run only against loopback.
 Infrastructure initialization downloads a checksum-locked provider. Tests use a

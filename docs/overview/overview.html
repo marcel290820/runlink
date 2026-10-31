@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Runlink overview</title>
+<!-- The README's overview image; node scripts/overview.mjs renders it in both color
+     schemes. It borrows the recipient GUI's stylesheet and fonts, and draws the helix
+     with helix.js's beads and base pairs, held still, so it reads as the product. -->
+<link rel="stylesheet" href="../../internal/frontend/assets/style.css">
+<style>
+/* The GUI's faces load from /assets/; this page loads the same files relative to it. */
+@font-face { font-family: "Archivo"; src: url("../../internal/frontend/assets/archivo.woff2") format("woff2");
+  font-weight: 400 900; font-stretch: 100% 125%; }
+@font-face { font-family: "Martian Mono"; src: url("../../internal/frontend/assets/martian-mono.woff2") format("woff2");
+  font-weight: 400 700; font-stretch: 87.5% 112.5%; }
+
+:root { --gutter: 56px; }
+/* A still picture: everything at its settled state. */
+*, *::before, *::after { animation: none !important; will-change: auto !important; }
+/* The GUI's single deep shadow ends in a hard edge at its blur extent in a still
+   render; layered shallow ones fall off to nothing. */
+.machine { box-shadow: inset 0 1px 0 #ffffff1f, 0 2px 4px #070a0f33, 0 10px 20px -8px #070a0f26, 0 24px 44px -18px #070a0f2e,
+  0 44px 72px -36px #070a0f33; }
+/* Outside the bench, the bench's grid placements do not apply. */
+.lead > *, .share > * { grid-area: auto; }
+body { display: block; width: 1280px; min-height: 0; padding-bottom: 64px; }
+.mono { font: 450 14.5px/1.7 var(--mono); font-stretch: 87.5%; }
+
+.lead { display: grid; grid-template-columns: 1fr 420px; align-items: last baseline; gap: 48px; padding: 8px var(--gutter) 0; }
+.lead .title { margin: 0; font-size: 104px; }
+.lead .desc { font-size: 21px; }
+h2.say { margin: 0 var(--gutter); font-size: 38px; font-weight: 780; font-stretch: 112.5%; letter-spacing: -.035em; line-height: 1.1; }
+
+/* Today: three routes leave the coworker for the script and fray before they reach it. */
+.today { margin-top: 96px; }
+.routes { position: relative; height: 330px; margin: 28px var(--gutter) 0; }
+.coworker { position: absolute; top: 132px; left: 0; display: grid; grid-template-columns: 1fr auto; column-gap: 18px; width: 230px; text-align: right; }
+.coworker::after { content: ""; grid-area: 1 / 2 / 3 / 3; width: 16px; height: 16px; margin-top: 5px; border-radius: 50%; background: var(--ink);
+  box-shadow: 0 0 0 5px var(--paper), 0 0 0 6px var(--edge); }
+.coworker strong, .snag strong, .step strong { font-size: 19px; font-weight: 700; font-stretch: 112.5%; letter-spacing: -.015em; }
+.coworker span, .snag span, .step span { font-size: 16px; line-height: 1.45; color: var(--muted); }
+.coworker span { grid-column: 1; }
+.snag { position: absolute; left: 640px; display: grid; width: 300px; padding-left: 20px; }
+.snag::before { content: ""; position: absolute; top: 3px; bottom: 3px; left: 0; width: 5px; border-radius: 3px;
+  background: repeating-linear-gradient(-45deg, var(--ink) 0 2.5px, transparent 2.5px 5px); }
+.snag:nth-child(2) { top: 0; }
+.snag:nth-child(3) { top: 122px; }
+.snag:nth-child(4) { top: 244px; }
+.box { position: absolute; top: 70px; right: 0; width: 252px; }
+.box .readings, .term .readings { padding: 22px 24px 24px; }
+.box .mono { margin-top: 12px; color: var(--core-muted); }
+.box .mono b, .term b { font-weight: 500; color: var(--core-ink); }
+
+/* With runlink: one command on the owner's machine, one link, the task in a browser. */
+.with { margin-top: 84px; }
+.share { display: grid; grid-template-columns: 760px 1fr; align-items: center; gap: 48px; margin: 32px var(--gutter) 0; }
+/* Sharing: the lamp burns steady while the command runs. */
+.term .who::before { background: var(--n1); box-shadow: 0 0 0 3px color-mix(in oklab, var(--n1) 22%, transparent), 0 0 14px var(--n1); }
+.term .mono { margin-top: 14px; color: var(--core-muted); white-space: pre; }
+.term .url { color: var(--core-ink); text-decoration: underline 1.5px; text-underline-offset: 5px;
+  text-decoration-color: color-mix(in oklab, var(--n2) 70%, transparent); }
+.step { position: relative; display: grid; align-content: start; padding-left: 52px; }
+.step::before { content: attr(data-n); position: absolute; top: -4px; left: 0; display: grid; place-items: center; width: 34px; height: 34px;
+  border-radius: 50%; background: var(--ink); color: var(--paper); font-size: 16px; font-weight: 800; font-stretch: 125%; }
+.browser { position: relative; margin: 40px var(--gutter) 0; padding: 0 32px 40px; border-radius: 30px; background: var(--lift);
+  box-shadow: inset 0 0 0 1px var(--rule), inset 0 1px 0 var(--hi), 0 40px 80px -48px var(--shadow); }
+.chrome { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 0 30px; }
+.address { display: inline-flex; align-items: center; gap: 10px; padding: 9px 18px 9px 12px; border-radius: 99px; background: var(--well);
+  box-shadow: inset 0 1px 2px var(--tint); font-size: 14.5px; font-weight: 560; color: var(--muted); }
+.address .icon { width: 17px; height: 17px; color: var(--ink); }
+.address b { font-weight: 560; color: var(--ink); }
+.browser .bench { padding-bottom: 0; }
+.browser .title { margin-bottom: 44px; font-size: 64px; }
+.browser .desc { font-size: 18px; }
+.steps { display: grid; grid-template-columns: minmax(0, 1fr) var(--link) minmax(300px, 1.1fr) var(--link) minmax(0, 1.15fr); margin: 34px calc(var(--gutter) + 32px) 0; }
+.steps .step:nth-child(2) { grid-column: 3; }
+.steps .step:nth-child(3) { grid-column: 5; }
+.step strong + span { margin-top: 4px; }
+</style>
+</head>
+<body>
+<header class="bar"><span class="brand"><svg class="mark" viewBox="0 0 30 16" aria-hidden="true"><path class="pair" d="M4.5 5.5v5M15 5v6M25.5 5.5v5"/><path d="M1 3C8 3 8 13 15 13S22 3 29 3M1 13C8 13 8 3 15 3S22 13 29 13"/></svg><span>run<b>link</b></span></span></header>
+
+<div class="lead">
+<h1 class="title">Your script, as a link.</h1>
+<p class="desc">Runlink turns a script that works on your machine into a page your coworkers can use in a browser. They fill in a form, run it, and get the result. The script stays where it works.</p>
+</div>
+
+<section class="today">
+<h2 class="say">A script that works is still hard to share.</h2>
+<div class="routes">
+<p class="coworker"><strong>Your coworker</strong><span>needs October's invoices for Acme, and has a browser.</span></p>
+<p class="snag"><strong>Install it</strong><span>Python, four packages, and your API key on their laptop.</span></p>
+<p class="snag"><strong>Ask you to run it</strong><span>"Can you pull October for Acme?" Every run waits on you.</span></p>
+<p class="snag"><strong>Wrap it in an app</strong><span>Build, host, and secure a web app for one script.</span></p>
+<section class="machine box"><div class="etch"></div><div class="readings">
+<h3 class="who">Your machine</h3>
+<p class="mono"><b>export-invoices.py</b><br>python 3.13<br>ACCOUNTING_KEY=***</p>
+</div></section>
+</div>
+</section>
+
+<section class="with">
+<h2 class="say">With runlink, it is one command and a link.</h2>
+<div class="share">
+<section class="machine term"><div class="etch"></div><div class="readings">
+<h3 class="who">Your machine</h3>
+<p class="mono"><b>$ runlink share ./export-invoices.py</b>
+Sharing "Export invoices". Send this link:
+
+  <span class="url" id="link">https://runlink.dev/7f3c9a2e-41d0-4b8e-9c35-2a6f1e08b7d4</span>
+
+Anyone with it can run the task on this machine while
+this command runs. Ctrl-C stops sharing.</p>
+</div></section>
+<p class="step" data-n="1"><strong>Share the script as it is</strong><span>No changes to the script. The first time, a few questions set up its form.</span></p>
+</div>
+
+<div class="browser">
+<div class="chrome">
+<span class="address" id="address"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5z"/></svg><span><b>runlink.dev</b>/7f3c9a2e-41d0-4b8e-9c35-2a6f1e08b7d4</span></span>
+<p class="seal"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11V8a5 5 0 0 1 10 0v3M5 11h14v10H5z"/></svg><span>Connected<span class="to"> to the owner's machine</span></span><span class="e2e">Encrypted end to end</span></p>
+</div>
+<div class="bench" data-stage="done">
+<h1 class="title">Export invoices</h1>
+<p class="desc">Collects a client's invoices for one month as a ZIP of PDFs.</p>
+<form class="input">
+<div class="fields-wrap"><fieldset class="fields">
+<div class="field"><label>Client</label><div class="slot"><input class="control" value="Acme GmbH"></div></div>
+<div class="field"><label>Month</label><div class="slot"><select class="control"><option>October 2026</option></select></div></div>
+<fieldset class="field"><legend>Format</legend><div class="slot"><div class="segments">
+<label><input type="radio" name="f" checked><span>PDF</span></label><label><input type="radio" name="f"><span>CSV</span></label>
+</div></div></fieldset>
+</fieldset></div>
+<div class="run-row"><button class="primary run again" type="button">Run again</button></div>
+</form>
+<div class="wire w1"></div>
+<section class="machine"><div class="etch"></div><div class="readings">
+<h2 class="who">The owner's machine</h2>
+<p class="readout">Done</p>
+<p class="caption">Took 2.8 s</p>
+<div class="meter"><span class="ticks"></span><span class="pct"></span></div>
+<ol class="log">
+<li data-t="00:00.3">Fetching Acme invoices</li>
+<li data-t="00:01.9">Found 14 for October</li>
+<li data-t="00:02.6">Packing acme-2026-10.zip</li>
+</ol>
+</div><div class="signal"></div></section>
+<div class="wire w2"></div>
+<section class="output">
+<h2 class="tag">Result</h2>
+<div class="result">
+<div class="doc"><span class="ext">ZIP</span><div><p class="fname">acme-2026-10.zip</p><p class="fmeta">2.4 MB</p></div></div>
+<a class="primary download"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Download ZIP</a>
+</div>
+</section>
+</div>
+</div>
+
+<div class="steps">
+<p class="step" data-n="2"><strong>Your coworker opens the link</strong><span>A form in any browser, with nothing to install and no account.</span></p>
+<p class="step" data-n="3"><strong>It runs on your machine</strong><span>With your setup and your access, which never leave it.</span></p>
+<p class="step" data-n="4"><strong>The result lands in their browser</strong><span>Inputs and results travel encrypted end to end.</span></p>
+</div>
+</section>
+
+<canvas id="helix" aria-hidden="true"></canvas>
+<script>
+// Paints helix.js's double helix, held still: beads in two strands sized by depth,
+// base pairs between them, ink on the page and nacre inside the machine. Routes that
+// never reach the script fray at their ends; the task's link runs through the machine
+// to the result's pearl. A seeded generator keeps every render the same.
+document.fonts.ready.then(() => {
+  const TAU = 2 * Math.PI;
+  const canvas = document.getElementById('helix'), ctx = canvas.getContext('2d');
+  const root = getComputedStyle(document.documentElement);
+  const ink = getComputedStyle(canvas).getPropertyValue('--strand').trim();
+  const nacre = ['--n1', '--n2', '--n3', '--n4', '--n5', '--n1'].map(name => root.getPropertyValue(name).trim());
+  const W = document.documentElement.scrollWidth, H = document.documentElement.scrollHeight, dpr = devicePixelRatio;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  Object.assign(canvas.style, { width: `${W}px`, height: `${H}px` });
+  ctx.scale(dpr, dpr);
+  let seed = 7;
+  const rand = (a, b) => { seed = (seed * 16807) % 2147483647; return a + (seed / 2147483647) * (b - a); };
+  const clamp = v => Math.min(1, Math.max(0, v));
+  const ramp = (a, b, v) => { const t = clamp((v - a) / (b - a)); return t * t * (3 - 2 * t); };
+  const box = el => { const r = el.getBoundingClientRect(); return { l: r.left + scrollX, t: r.top + scrollY, r: r.right + scrollX, b: r.bottom + scrollY }; };
+
+  // A soft dot and a glow, tinted per color, as helix.js stamps them.
+  const sprites = new Map();
+  function sprite(color, glow) {
+    const key = `${color}|${glow}`;
+    if (sprites.has(key)) return sprites.get(key);
+    const image = document.createElement('canvas');
+    image.width = image.height = 64;
+    const draw = image.getContext('2d');
+    const fill = draw.createRadialGradient(32, 32, 0, 32, 32, 32);
+    for (const [at, alpha] of glow ? [[0, .7], [.22, .28], [1, 0]] : [[0, 1], [.72, 1], [1, 0]]) fill.addColorStop(at, `rgba(255,255,255,${alpha})`);
+    draw.fillStyle = fill;
+    draw.fillRect(0, 0, 64, 64);
+    draw.globalCompositeOperation = 'source-in';
+    draw.fillStyle = color;
+    draw.fillRect(0, 0, 64, 64);
+    sprites.set(key, image);
+    return image;
+  }
+  // Inside a machine's rounded box the color comes from the nacre band, 24 steps a period.
+  const machines = [...document.querySelectorAll('.machine')].map(el => ({ ...box(el), k: parseFloat(getComputedStyle(el).borderTopLeftRadius) }));
+  const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+  function color(x, y) {
+    const m = machines.find(m => {
+      if (x < m.l || x > m.r || y < m.t || y > m.b) return false;
+      const cx = Math.min(Math.max(x, m.l + m.k), m.r - m.k), cy = Math.min(Math.max(y, m.t + m.k), m.b - m.k);
+      return (x - cx) ** 2 + (y - cy) ** 2 <= m.k * m.k;
+    });
+    if (!m) return ink;
+    const u = Math.floor(((x - m.l) / 420) % 1 * 24) / 24 * 5, i = Math.floor(u), f = u - i;
+    const [a, b] = [rgb(nacre[i]), rgb(nacre[i + 1])];
+    return `rgb(${a.map((v, j) => Math.round(v + (b[j] - v) * f)).join(',')})`;
+  }
+  function stamp(glow, x, y, r, a, tint = color(x, y)) {
+    if (a < .005) return;
+    ctx.globalAlpha = Math.min(1, a);
+    ctx.drawImage(sprite(tint, glow), x - r, y - r, 2 * r, 2 * r);
+  }
+
+  // Points every 5px along a cubic curve, with unit tangents and distance.
+  function walk(p0, p1, p2, p3) {
+    const at = t => { const u = 1 - t; return [0, 1].map(k => u * u * u * p0[k] + 3 * u * u * t * p1[k] + 3 * u * t * t * p2[k] + t * t * t * p3[k]); };
+    const out = [];
+    let acc = 0, next = 0, [ax, ay] = at(0);
+    for (let i = 1; i <= 800; i++) {
+      const [bx, by] = at(i / 800), len = Math.hypot(bx - ax, by - ay);
+      while (len && next <= acc + len) {
+        const k = (next - acc) / len;
+        out.push({ x: ax + (bx - ax) * k, y: ay + (by - ay) * k, tx: (bx - ax) / len, ty: (by - ay) / len, d: next });
+        next += 5;
+      }
+      acc += len;
+      [ax, ay] = [bx, by];
+    }
+    return { pts: out, L: acc };
+  }
+
+  // One helix along a path. amp(d) is its radius; fray(d) runs 0 to 1 where it comes apart.
+  function helix({ pts, L }, { amp, pitch, phase = 0, fray = () => 0, dust = true }) {
+    const beads = pts.map(p => {
+      const f = fray(p.d), th = TAU * p.d / pitch + phase, a = amp(p.d) * (1 + 1.6 * f * f);
+      return [0, 1].map(k => {
+        const c = Math.cos(th + k * Math.PI), z = Math.sin(th + k * Math.PI), j = 9 * f * f;
+        return { x: p.x - p.ty * a * c + rand(-j, j), y: p.y + p.tx * a * c + rand(-j, j), depth: (z + 1) / 2, vis: 1 - .8 * f, bond: 1 - f, face: Math.abs(c) };
+      });
+    });
+    // Base pairs, every third bead, each half shaded by the strand it leaves.
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 1.1;
+    beads.forEach((pair, i) => {
+      if (i % 3) return;
+      const [s, t] = pair[0].depth > pair[1].depth ? pair : [pair[1], pair[0]];
+      const a = s.bond * s.vis * (.16 + .42 * s.face), mx = (s.x + t.x) / 2, my = (s.y + t.y) / 2;
+      if (a < .01) return;
+      ctx.strokeStyle = color(mx, my);
+      for (const [from, to, k] of [[s, { x: mx, y: my }, 1], [{ x: mx, y: my }, t, .55]]) {
+        ctx.globalAlpha = a * k;
+        ctx.beginPath();
+        ctx.moveTo(from.x, from.y);
+        ctx.lineTo(to.x, to.y);
+        ctx.stroke();
+      }
+    });
+    for (const pair of beads) for (const b of pair) {
+      const r = .7 + 1.5 * b.depth, a = (.22 + .78 * b.depth) * b.vis;
+      stamp(false, b.x, b.y, r, a);
+      if (color(b.x, b.y) !== ink && b.depth > .55) stamp(true, b.x, b.y, r * 4.5, a * .16);
+    }
+    // Dust drifting beside the link.
+    if (dust) for (let d = 0; d < L; d += 22) {
+      const p = pts[Math.min(pts.length - 1, Math.round(d / 5))], side = rand(0, 1) < .5 ? -1 : 1, off = side * rand(1.4, 3.4) * amp(p.d);
+      const x = p.x - p.ty * off, y = p.y + p.tx * off;
+      if (color(x, y) === ink) stamp(false, x, y, rand(.5, 1.3), rand(.18, .5) * ramp(0, 60, p.d) * ramp(0, 60, L - p.d) * (1 - fray(p.d)));
+    }
+  }
+
+  // Today: three routes fan out from the coworker and fray short of the script.
+  const start = box(document.querySelector('.coworker'));
+  const from = [start.r - 8, start.t + 13];
+  document.querySelectorAll('.snag').forEach((snag, n) => {
+    const s = box(snag), to = [s.l - 48, (s.t + s.b) / 2], dx = to[0] - from[0];
+    const path = walk(from, [from[0] + dx * .4, from[1]], [to[0] - dx * .45, to[1]], to);
+    helix(path, { amp: d => 13 * ramp(0, 70, d), pitch: 140, phase: n * 2.1,
+      fray: d => ramp(path.L - 150, path.L, d) });
+    // What broke off: loose beads ahead of the frayed ends, and the dashed ring of a broken node.
+    const end = path.pts.at(-1);
+    for (let i = 0; i < 16; i++) {
+      const dist = rand(4, 40), turn = rand(-1.1, 1.1);
+      const x = end.x + (end.tx * Math.cos(turn) - end.ty * Math.sin(turn)) * dist, y = end.y + (end.ty * Math.cos(turn) + end.tx * Math.sin(turn)) * dist;
+      stamp(false, x, y, rand(.6, 1.5), .75 * (1 - dist / 46));
+    }
+  });
+
+  // With runlink: the task's link, from Run through the machine to the result's pearl.
+  const w1 = box(document.querySelector('.w1')), w2 = box(document.querySelector('.w2'));
+  const core = box(document.querySelector('.bench .signal'));
+  const y = (w1.t + w1.b) / 2, x0 = w1.l, x1 = w2.r;
+  const link = walk([x0, y], [x0 + 1, y], [x1 - 1, y], [x1, y]);
+  const inCore = d => ramp(core.l - 30, core.l + 30, x0 + d) * ramp(core.l - 30, core.l + 30, core.l + core.r - (x0 + d));
+  helix(link, { amp: d => (15 + 15 * inCore(d)) * ramp(0, 40, d) * ramp(0, 40, link.L - d), pitch: 150, phase: 1.3 });
+  // The machine's air: motes in nacre.
+  const shell = machines.find(m => m.l <= core.l && m.r >= core.r && m.t <= core.t && m.b >= core.b);
+  for (let i = 0; i < 40; i++) stamp(false, rand(shell.l + 16, shell.r - 16), rand(shell.t + 16, shell.b - 16), rand(.5, 1.3), rand(.12, .4));
+  const r = 7.5, pearl = ctx.createRadialGradient(x1 - r * .35, y - r * .4, 0, x1, y, r);
+  pearl.addColorStop(0, '#fff');
+  nacre.slice(0, 3).reverse().forEach((c, i) => pearl.addColorStop(.4 + i * .3, c));
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = pearl;
+  ctx.beginPath();
+  ctx.arc(x1, y, r, 0, TAU);
+  ctx.fill();
+  ctx.strokeStyle = ink;
+  ctx.lineWidth = 2.25;
+  ctx.stroke();
+
+  // The link the command prints is the address the coworker opens: a line of beads joins them.
+  const said = box(document.getElementById('link')), opened = box(document.getElementById('address'));
+  const a = [said.l + 40, said.b + 8], b = [opened.l + 60, opened.t - 6];
+  const hop = walk(a, [a[0], a[1] + 60], [b[0], b[1] - 60], b);
+  for (const p of hop.pts) if (p.d % 10 === 0 && color(p.x, p.y) === ink) stamp(false, p.x, p.y, 1.5, .55);
+  document.body.dataset.painted = '';
+});
+</script>
+</body>
+</html>
